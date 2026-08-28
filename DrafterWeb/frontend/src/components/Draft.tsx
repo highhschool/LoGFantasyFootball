@@ -108,13 +108,6 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => setShowBoard((v) => !v)}
-              className="rounded-md bg-raised px-3 py-1.5 text-sm font-medium"
-            >
-              {showBoard ? "Hide board" : "Show board"}
-            </button>
-            <button
-              type="button"
               disabled={locked}
               onClick={() => act(() => api.autopick(session.id))}
               className="rounded-md bg-raised px-3 py-1.5 text-sm font-medium disabled:opacity-40"
@@ -136,6 +129,13 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
               className="rounded-md bg-raised px-3 py-1.5 text-sm font-medium disabled:opacity-40"
             >
               Simulate to end
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowBoard((v) => !v)}
+              className="ml-auto rounded-md bg-raised px-3 py-1.5 text-sm font-medium"
+            >
+              {showBoard ? "Hide board" : "Show board"}
             </button>
           </div>
 
