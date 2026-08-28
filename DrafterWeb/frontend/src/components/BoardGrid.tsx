@@ -16,14 +16,22 @@ const TONE: Record<string, string> = {
  * header pinned -- on a 15x12 board you are almost always looking at a cell
  * whose row or column label has scrolled out of view.
  */
-export function BoardGrid({ session }: { session: DraftSession }) {
+export function BoardGrid({
+  session,
+  className = "",
+}: {
+  session: DraftSession;
+  className?: string;
+}) {
   const { teams, rounds, your_slot } = session.config;
   const byOverall = new Map(session.picks.map((p) => [p.overall, p]));
   const onClock = session.on_the_clock?.overall ?? -1;
   const slots = Array.from({ length: teams }, (_, i) => i + 1);
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-rule bg-surface">
+    <section
+      className={`flex min-h-0 flex-col overflow-hidden rounded-lg border border-rule bg-surface ${className}`}
+    >
       <header className="flex items-center gap-3 border-b border-rule px-3 py-2">
         <h2 className="text-xs font-semibold tracking-wider text-ink-3 uppercase">
           Draft board

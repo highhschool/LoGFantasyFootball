@@ -12,6 +12,7 @@ interface Props {
   onSearch: (value: string) => void;
   onPosition: (value: string) => void;
   onDraft: (player: Player) => void;
+  className?: string;
 }
 
 export function PlayerTable({
@@ -23,9 +24,12 @@ export function PlayerTable({
   onSearch,
   onPosition,
   onDraft,
+  className = "",
 }: Props) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-rule bg-surface">
+    <section
+      className={`flex min-h-0 flex-col rounded-lg border border-rule bg-surface ${className}`}
+    >
       <header className="flex flex-wrap items-center gap-2 border-b border-rule p-3">
         <input
           type="search"
