@@ -50,7 +50,10 @@ def player_key(name: str, position: str, team: str) -> str:
     Defenses key on team alone, because the two feeds name them differently and
     a team can only have one.
     """
-    pos = (position or "").strip().upper()
+    # Normalized here too, so a caller passing a source's own label -- DEF for
+    # a defense, RB1 for a running back -- cannot silently produce a key that
+    # matches nothing.
+    pos = normalize_position(position)
     tm = (team or "").strip().upper()
 
     if pos == "DST":
