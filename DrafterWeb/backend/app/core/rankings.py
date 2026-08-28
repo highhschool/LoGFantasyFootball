@@ -1,16 +1,17 @@
-"""Load the ranking CSVs produced by FantasyDrafterAI/build_rankings.py.
+"""Building the player pool, from the ADP API or from CSVs.
 
-This module is the seam between the two projects. The webapp never imports
-DrafterAI.py; it only reads the CSVs, and it checks their schema on the way in
-so that a change on the tool side surfaces as a clear error rather than a
-strange bug on draft night.
+The app fetches ADP directly from Fantasy Football Calculator (see core.adp),
+the same public endpoint FantasyDrafterAI/build_rankings.py uses. That keeps the
+webapp deployable on its own: it does not need the CLI tool to have been run,
+and the two projects cannot drift because both derive from the same upstream.
 
-That guard is not hypothetical. FantasyDrafterAI/2025_Rankings/ predates
-build_rankings.py and carries the old FantasyPros export schema -- same
-directory naming convention, incompatible columns.
+The CSV reader below remains as an explicit override. Point RANKINGS_DIR at a
+directory of build_rankings.py output (or hand-curated rankings in that format)
+and it wins over the API. Its schema check is not hypothetical:
+FantasyDrafterAI/2025_Rankings/ predates build_rankings.py and carries the old
+FantasyPros columns under the same naming convention.
 
-Only OVR_Rankings.csv is read. The per-position files are a projection of it,
-and deriving them here keeps a single source of truth.
+Only OVR_Rankings.csv is read. The per-position files are a projection of it.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import csv
 import logging
 from pathlib import Path
 
+from . import adp
 from .models import Keeper, Player, RankingsError
 from .names import normalize_name, normalize_position, player_key
 
@@ -37,9 +39,15 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
 class PlayerPool:
     """Every player in a season's rankings, indexed for lookup."""
 
-    def __init__(self, players: list[Player], year: int) -> None:
+    def __init__(
+        self,
+        players: list[Player],
+        year: int,
+        provenance: "adp.Provenance | None" = None,
+    ) -> None:
         self.year = year
         self.players = players
+        self.provenance = provenance or adp.Provenance(source="csv", year=year)
         self.by_key = {p.key: p for p in players}
 
         self._by_name: dict[str, list[Player]] = {}
@@ -180,7 +188,40 @@ def load_pool(rankings_dir: Path, year: int) -> PlayerPool:
 
     players.sort(key=lambda p: p.adp)
     logger.info("loaded %d players for %d from %s", len(players), year, path)
-    return PlayerPool(players, year)
+    return PlayerPool(
+        players, year, adp.Provenance(source="csv", year=year)
+    )
+
+
+def build_pool(
+    year: int,
+    teams: int,
+    scoring: str,
+    cache_dir: Path,
+    ttl_seconds: int = 3600,
+    csv_dir: Path | None = None,
+    allow_network: bool = True,
+) -> PlayerPool:
+    """The pool the app runs on.
+
+    An explicit csv_dir wins outright -- if someone points RANKINGS_DIR at a
+    directory they mean it, and silently preferring the network would ignore
+    hand-curated rankings. Otherwise the ADP feed is used, falling back to its
+    own disk cache when the feed is unreachable.
+    """
+    if csv_dir is not None:
+        logger.info("rankings source: CSV override at %s", csv_dir)
+        return load_pool(csv_dir, year)
+
+    players, provenance = adp.load(
+        year=year,
+        teams=teams,
+        scoring=scoring,
+        cache_dir=cache_dir,
+        ttl_seconds=ttl_seconds,
+        allow_network=allow_network,
+    )
+    return PlayerPool(players, year, provenance)
 
 
 def resolve_keepers(

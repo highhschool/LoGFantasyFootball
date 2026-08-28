@@ -32,12 +32,25 @@ def _env_path(name: str, default: Path) -> Path:
 
 SEASON = int(os.getenv("SEASON", "2026"))
 
-RANKINGS_DIR = _env_path(
-    "RANKINGS_DIR",
-    REPO_ROOT / "FantasyDrafterAI" / f"{SEASON}_Rankings",
-)
+# ADP comes from Fantasy Football Calculator by default, so the app needs
+# nothing from the CLI tool in order to run.
+ADP_TEAMS = int(os.getenv("ADP_TEAMS", "12"))
+ADP_SCORING = os.getenv("ADP_SCORING", "ppr")  # ppr | half-ppr | standard
+
+# How long a cached feed is served without re-fetching. FFC publishes a rolling
+# one-week window, so hourly is plenty fresh and keeps startup instant.
+ADP_TTL_SECONDS = int(os.getenv("ADP_TTL_SECONDS", "3600"))
+
+# Set to false for an air-gapped run: serve the cache and never dial out.
+ADP_ALLOW_NETWORK = os.getenv("ADP_ALLOW_NETWORK", "true").lower() not in {"0", "false", "no"}
+
+# Optional CSV override. Unset by default -- point it at build_rankings.py
+# output (or hand-curated rankings in that format) and it wins over the API.
+_csv_override = os.getenv("RANKINGS_DIR", "").strip()
+RANKINGS_DIR: Path | None = Path(_csv_override) if _csv_override else None
 
 DATA_DIR = _env_path("DATA_DIR", PROJECT_ROOT / "data")
+ADP_CACHE_DIR = DATA_DIR / "adp-cache"
 
 SLEEPER_API = os.getenv("SLEEPER_API", "https://api.sleeper.app/v1")
 SLEEPER_LEAGUE_ID = os.getenv("SLEEPER_LEAGUE_ID", "")

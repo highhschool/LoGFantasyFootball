@@ -4,7 +4,8 @@ Self-hosted draft tool for the National Goon Fantasy League. See [PLAN.md](PLAN.
 for the architecture and phase plan.
 
 **Status: P1 complete.** The mock draft sandbox is playable: pick against eleven
-bots, undo, autopick, or simulate the rest of the draft. 133 backend tests pass.
+bots, undo, autopick, or simulate the rest of the draft. ADP comes live from the
+public feed, so the app is self-contained. 161 backend tests pass.
 
 Live at <https://ngfldrafter.com>.
 
@@ -12,21 +13,34 @@ Live at <https://ngfldrafter.com>.
 
 ## Relationship to `FantasyDrafterAI/`
 
-This app **never imports `DrafterAI.py`**. It reads the ranking CSVs that
-`build_rankings.py` produces, and that directory is the only contract between the
-two projects:
+**None at runtime.** The app fetches ADP straight from Fantasy Football
+Calculator, the same public endpoint `build_rankings.py` calls, so it does not
+need the CLI tool to have been run and can be deployed on its own. Both projects
+derive from the same upstream, so they cannot drift apart.
 
-    FantasyDrafterAI/<YEAR>_Rankings/OVR_Rankings.csv
+The feed is cached to `data/adp-cache/` on every successful fetch. If FFC is
+unreachable the last good cache is served and flagged as **stale**, in the UI
+and in `/api/health` -- a third party being down must never take the site out on
+draft night. A cache inside its TTL (one hour by default) is served without a
+request at all, so startup is instant.
 
-The loader checks for all twelve expected columns at startup and fails with a
-readable message if they drift. That guard is not theoretical — `2025_Rankings/`
-predates `build_rankings.py`, carries the old FantasyPros schema, and is
-correctly rejected (there is a test for exactly this).
+`GET /api/health` reports where the data came from and how old it is:
 
-The rankings mount is **read-only**, so this app cannot write into a directory
-the other session owns.
+```json
+{"source": "api", "age": "just now", "total_drafts": 7986,
+ "sampled_from": "2026-08-20", "sampled_to": "2026-08-27", "stale": false}
+```
 
----
+`build_rankings.py` throws that metadata away when it writes CSVs, which is why
+a file four months old used to look identical to a fresh one.
+
+### The CSV override
+
+Set `RANKINGS_DIR` to a directory of `build_rankings.py` output (or
+hand-curated rankings in the same twelve-column format) and it wins over the
+API. Unset by default. The schema check on that path is not hypothetical:
+`FantasyDrafterAI/2025_Rankings/` predates `build_rankings.py`, carries the old
+FantasyPros columns under the same naming convention, and is correctly rejected.
 
 ## Running locally
 
@@ -68,8 +82,8 @@ npm run dev
 Docker builds the frontend itself in a first stage, so a container needs no
 prior `npm run build`.
 
-To change season or rankings directory, set the environment variable first —
-PowerShell has no inline `VAR=x cmd` prefix:
+To change season or scoring, set the environment variable first — PowerShell
+has no inline `VAR=x cmd` prefix:
 
 ```powershell
 $env:SEASON = "2025"
@@ -80,13 +94,18 @@ python -m uvicorn app.main:app --reload --port 8000
 
 | Route | Purpose |
 |---|---|
-| `GET /api/health` | Season, player count, and any rankings load error |
-| `GET /api/players` | `?position=RB`, `?search=jamarr`, `?limit=50` |
+| `GET /api/health` | Season, player count, and ADP provenance |
+| `GET /api/players` | `?position=RB`, `?search=jamarr`, `?limit=500` |
 | `GET /api/board` | The empty snake board for a config |
-| `POST /api/rankings/reload` | Re-read the CSVs after regenerating them |
+| `POST /api/sessions` | Start a mock draft; bots pick up to your slot |
+| `GET /api/sessions/{id}/available` | Draftable players, filtered |
+| `POST /api/sessions/{id}/pick` | Draft a player, then run the bots |
+| `POST /api/sessions/{id}/undo` | Rewind to your own last decision |
+| `POST /api/sessions/{id}/simulate` | Run the draft to the end |
+| `POST /api/rankings/reload` | Admin only; needs `X-Admin-Token` |
 
-A bad rankings file degrades rather than crashes: the container stays up, health
-reports `degraded` with the error, and the status page shows it.
+Unavailable ADP degrades rather than crashes: the container stays up, health
+reports `degraded`, and the UI explains it.
 
 ---
 
@@ -259,22 +278,18 @@ immediately becomes public again, and you can redo the policy.
 
 ### Refreshing ADP before a draft
 
-`start.ps1` does **not** rebuild rankings by default, and deliberately so: the
-fetch depends on an external API, and a stale-but-working rankings file always
-beats a startup that fails because a third party is down. It also writes into
-`FantasyDrafterAI/`, which belongs to the CLI tool.
+Normally you do not need to. The app re-fetches whenever its cache is older than
+an hour, so it stays current on its own.
 
-Ask for it explicitly when you want it — draft morning, mainly:
+FFC publishes a rolling one-week window, so ADP keeps moving as the draft
+approaches. To force a fresh pull immediately -- draft morning, mainly:
 
 ```powershell
 .\start.ps1 -RefreshRankings
 ```
 
-That runs `build_rankings.py`, then starts the app. If the rebuild fails the app
-still starts on the rankings you already had, and says so.
-
-FFC's feed is a rolling one-week window, so ADP keeps moving as the draft
-approaches. Refreshing the morning of catches late injury and preseason news.
+That clears the cached feed so startup fetches again. Step 2 then reports
+`via api` rather than `via cache`.
 
 ### Still manual: the app itself
 

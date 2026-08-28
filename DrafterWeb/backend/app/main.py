@@ -19,7 +19,8 @@ from . import config
 from .api import sessions
 from .core.models import DraftConfig, RankingsError
 from .core.order import build_board, picks_for_slot
-from .core.rankings import PlayerPool, load_pool
+from .core import adp
+from .core.rankings import PlayerPool, build_pool
 from .store import SessionStore
 
 logging.basicConfig(
@@ -39,11 +40,19 @@ _store: SessionStore | None = None
 def _load() -> None:
     global _pool, _load_error
     try:
-        _pool = load_pool(config.RANKINGS_DIR, config.SEASON)
+        _pool = build_pool(
+            year=config.SEASON,
+            teams=config.ADP_TEAMS,
+            scoring=config.ADP_SCORING,
+            cache_dir=config.ADP_CACHE_DIR,
+            ttl_seconds=config.ADP_TTL_SECONDS,
+            csv_dir=config.RANKINGS_DIR,
+            allow_network=config.ADP_ALLOW_NETWORK,
+        )
         _load_error = None
     except RankingsError as exc:
-        # Startup must not die here: a bad rankings file should render as a
-        # readable message in the UI, not an unreachable container.
+        # Startup must not die here: an unreachable feed with no cache should
+        # render as a readable message in the UI, not an unreachable container.
         _pool = None
         _load_error = str(exc)
         logger.error("rankings unavailable: %s", exc)
@@ -93,13 +102,17 @@ def health() -> dict:
     path never reaches an unauthenticated caller. The full path and the full
     error are both in the logs.
     """
-    return {
+    body = {
         "status": "ok" if _pool else "degraded",
         "season": config.SEASON,
-        "rankings": config.RANKINGS_DIR.name,
         "players_loaded": len(_pool) if _pool else 0,
         "error": _public_error(),
     }
+    if _pool is not None:
+        provenance = _pool.provenance
+        body["adp"] = provenance.as_dict()
+        body["adp"]["age"] = adp.humanize_age(provenance.age_seconds)
+    return body
 
 
 def _public_error() -> str | None:
@@ -107,6 +120,8 @@ def _public_error() -> str | None:
         return None
     if "missing required column" in _load_error:
         return "rankings file does not match the expected schema"
+    if "unreachable" in _load_error or "could not reach" in _load_error:
+        return "the ADP feed is unreachable and nothing is cached yet"
     return "rankings could not be loaded"
 
 
@@ -131,7 +146,7 @@ def reload_rankings(x_admin_token: str = Header(default="")) -> dict:
 def list_players(
     position: str | None = Query(None, description="QB, RB, WR, TE, K, or DST"),
     search: str | None = Query(None, description="partial player name"),
-    limit: int = Query(50, ge=1, le=500),
+    limit: int = Query(500, ge=1, le=2000),
 ) -> dict:
     pool = _require_pool()
 

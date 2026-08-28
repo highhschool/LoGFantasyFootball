@@ -202,7 +202,7 @@ def available_players(
     session_id: str,
     position: str | None = Query(None),
     search: str | None = Query(None),
-    limit: int = Query(50, ge=1, le=300),
+    limit: int = Query(500, ge=1, le=2000),
     pool: PlayerPool = Depends(get_pool),
     store: SessionStore = Depends(get_store),
 ) -> dict:

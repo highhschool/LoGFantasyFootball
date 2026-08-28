@@ -1,6 +1,6 @@
 # NGFL Drafter — Web App Plan
 
-Status: draft v1 (2026-08-27). Working document — we edit this as we go.
+Status: v3 (2026-08-27). P0 and P1 shipped. Working document — we edit as we go.
 
 ## Locked decisions
 
@@ -11,24 +11,41 @@ Status: draft v1 (2026-08-27). Working document — we edit this as we go.
 | Hosting | Home machine (Windows box), Docker, Cloudflare named tunnel |
 | Domain | **`ngfldrafter.com`**, registered on Cloudflare Registrar. App serves from the apex. |
 | Keepers | **Optional everywhere.** No keepers is the default and a fully valid draft. |
-| Relationship to `FantasyDrafterAI/` | Fresh port. The webapp never imports `DrafterAI.py`. |
+| Relationship to `FantasyDrafterAI/` | **None at runtime.** Fresh port, and ADP now comes from the same public API the tool uses. |
 
 **Hard constraint:** `FantasyDrafterAI/` is owned by another session. Read-only. All new code lives in `DrafterWeb/`.
 
 ---
 
-## The seam between the two projects
+## Data source (revised)
 
-The webapp reads `FantasyDrafterAI/<YEAR>_Rankings/*.csv`. That directory — those 12 columns — is the entire contract:
+**Originally** the webapp read the CSVs `build_rankings.py` produces, treating
+that directory as the contract between the two projects.
 
-    RK, PLAYER NAME, POS, POS RANK, TEAM, BYE WEEK,
-    ADP, ADP ROUND, TIMES DRAFTED, HIGH, LOW, STDEV
+**Now** the webapp calls the ADP API directly -- the same public Fantasy
+Football Calculator endpoint `build_rankings.py` itself calls. The CSV seam is
+gone.
 
-`build_rankings.py` keeps producing them; the webapp keeps working. Everything else in the Python tool can be rewritten freely. The loader asserts the schema at startup and fails loudly if columns drift, so a breaking change shows up as a clear error instead of a weird bug on draft night.
+Why the change:
 
-Mounted read-only into the container, plus a "refresh rankings" endpoint.
+- **The webapp is deployable on its own.** Before, a standalone checkout had no
+  rankings and booted degraded with 0 players, which quietly made the
+  "rent a VPS for draft week" plan impossible.
+- **No drift.** Both projects derive from the same upstream rather than one
+  depending on the other's output format, so the schema guard's whole failure
+  mode disappears.
+- **Provenance survives.** `build_rankings.py` logs the draft count and date
+  range, then discards them when writing CSVs, so a four-month-old file looks
+  identical to a fresh one. Fetching directly keeps them, and the UI shows
+  "ADP 2 minutes ago, 7,986 drafts".
 
----
+The cost is a runtime network dependency, contained by caching every successful
+fetch to `data/adp-cache/`. A cache inside its TTL is served without a request;
+a failed fetch falls back to the last good cache and flags it **stale** in both
+the UI and `/api/health`. A third party being down cannot take the site out.
+
+`RANKINGS_DIR` remains as an explicit CSV override for hand-curated rankings.
+`build_rankings.py` is unaffected and still required by `DrafterAI.py`.
 
 ## Core architecture: picks are events, state is derived
 
@@ -57,7 +74,8 @@ This is the main departure from the current tool, where `update_dataframes_with_
           api/                 sessions, picks, players, sleeper routes
           core/
             models.py          Player, DraftConfig, Pick, DraftState
-            rankings.py        CSV loader + schema guard
+            adp.py             ADP fetch + disk cache + provenance
+            rankings.py        pool building; CSV override loader
             engine.py          pure reducer (config, picks) -> state
             order.py           snake order + keeper slotting
             bots.py            AI pick strategies

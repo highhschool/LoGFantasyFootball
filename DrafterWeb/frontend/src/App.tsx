@@ -65,16 +65,21 @@ export default function App() {
       <Centered>
         <strong className="text-danger">Rankings unavailable</strong>
         <p className="mt-2 max-w-sm text-ink-2">
-          {health.error ?? "The server could not load a rankings file."} Run{" "}
-          <code className="rounded bg-raised px-1">build_rankings.py</code> in
-          FantasyDrafterAI, then reload.
+          {health.error ?? "The server could not load any ADP data."}
+        </p>
+        <p className="mt-2 max-w-sm text-sm text-ink-3">
+          The app pulls ADP from Fantasy Football Calculator and caches it. This
+          means the feed is unreachable and there is no cached copy yet, so it
+          should clear on its own once the connection is back.
         </p>
       </Centered>
     );
   }
 
   if (session) {
-    return <Draft session={session} onSession={setSession} onExit={exit} />;
+    return (
+      <Draft session={session} onSession={setSession} onExit={exit} adp={health?.adp} />
+    );
   }
 
   return (
@@ -84,6 +89,7 @@ export default function App() {
       error={error}
       season={health?.season ?? 0}
       playerCount={health?.players_loaded ?? 0}
+      adp={health?.adp}
       onStart={start}
       onResume={resume}
       onDelete={remove}

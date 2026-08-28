@@ -1,17 +1,19 @@
 import { useEffect, useState } from "react";
-import { api, ApiError } from "../api";
+import { api, ApiError, type AdpProvenance } from "../api";
+import { AdpBadge } from "./AdpBadge";
 import type { DraftSession, Player } from "../types";
 import { BoardGrid } from "./BoardGrid";
 import { PlayerTable } from "./PlayerTable";
 import { RosterPanel } from "./RosterPanel";
 
 interface Props {
+  adp?: AdpProvenance;
   session: DraftSession;
   onSession: (session: DraftSession) => void;
   onExit: () => void;
 }
 
-export function Draft({ session, onSession, onExit }: Props) {
+export function Draft({ session, onSession, onExit, adp }: Props) {
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -27,7 +29,7 @@ export function Draft({ session, onSession, onExit }: Props) {
     const timer = setTimeout(() => {
       setLoading(true);
       api
-        .available(session.id, { position, search, limit: 100 })
+        .available(session.id, { position, search, limit: 1000 })
         .then((next) => {
           if (!cancelled) setPlayers(next);
         })
@@ -61,7 +63,7 @@ export function Draft({ session, onSession, onExit }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <Header session={session} busy={busy} onExit={onExit} />
+      <Header session={session} busy={busy} onExit={onExit} adp={adp} />
 
       {error && (
         <p className="border-b border-danger/30 bg-danger/10 px-4 py-2 text-sm text-danger">
@@ -131,10 +133,12 @@ function Header({
   session,
   busy,
   onExit,
+  adp,
 }: {
   session: DraftSession;
   busy: boolean;
   onExit: () => void;
+  adp?: AdpProvenance;
 }) {
   const clock = session.on_the_clock;
 
@@ -180,9 +184,12 @@ function Header({
         </>
       )}
 
-      <span className="tnum ml-auto text-sm text-ink-3">
-        {session.picks.length}/{session.config.teams * session.config.rounds} picks
-      </span>
+      <div className="ml-auto flex items-center gap-3">
+        <AdpBadge adp={adp} />
+        <span className="tnum text-sm text-ink-3">
+          {session.picks.length}/{session.config.teams * session.config.rounds} picks
+        </span>
+      </div>
     </header>
   );
 }

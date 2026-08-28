@@ -24,10 +24,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app ./app
 COPY --from=frontend /src/backend/app/static ./app/static
 
-# Rankings arrive as a read-only bind mount, not baked into the image, so
-# regenerating them on the host does not require a rebuild.
-ENV RANKINGS_DIR=/rankings \
-    DATA_DIR=/data \
+# ADP is fetched from the public feed at startup and cached under /data, so
+# the image carries no ranking data and needs no mount from the host.
+ENV DATA_DIR=/data \
     SEASON=2026
 
 EXPOSE 8000

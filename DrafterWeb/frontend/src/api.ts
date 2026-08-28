@@ -31,12 +31,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export interface AdpProvenance {
+  source: "api" | "cache" | "csv";
+  year: number;
+  scoring: string | null;
+  teams: number | null;
+  fetched_at: string | null;
+  age_seconds: number | null;
+  total_drafts: number | null;
+  sampled_from: string | null;
+  sampled_to: string | null;
+  stale: boolean;
+  age: string;
+}
+
 export interface Health {
   status: "ok" | "degraded";
   season: number;
-  rankings: string;
   players_loaded: number;
   error: string | null;
+  adp?: AdpProvenance;
 }
 
 export const api = {
@@ -60,7 +74,7 @@ export const api = {
     const params = new URLSearchParams();
     if (opts.position) params.set("position", opts.position);
     if (opts.search) params.set("search", opts.search);
-    params.set("limit", String(opts.limit ?? 100));
+    params.set("limit", String(opts.limit ?? 1000));
     return request<{ count: number; players: Player[] }>(
       `/api/sessions/${id}/available?${params}`,
     ).then((r) => r.players);

@@ -1,5 +1,7 @@
 import { useState } from "react";
+import type { AdpProvenance } from "../api";
 import type { NewSession, SessionSummary } from "../types";
+import { AdpBadge } from "./AdpBadge";
 
 interface Props {
   sessions: SessionSummary[];
@@ -7,6 +9,7 @@ interface Props {
   error: string | null;
   season: number;
   playerCount: number;
+  adp?: AdpProvenance;
   onStart: (body: NewSession) => void;
   onResume: (id: string) => void;
   onDelete: (id: string) => void;
@@ -18,6 +21,7 @@ export function Setup({
   error,
   season,
   playerCount,
+  adp,
   onStart,
   onResume,
   onDelete,
@@ -34,6 +38,7 @@ export function Setup({
         <p className="mt-1 text-ink-2">
           Mock draft against the AI. {playerCount} players ranked for {season}.
         </p>
+        <AdpBadge adp={adp} className="mt-2" />
       </header>
 
       <section className="rounded-lg border border-rule bg-surface p-5">

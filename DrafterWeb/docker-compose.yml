@@ -10,11 +10,13 @@ services:
       SEASON: "${SEASON:-2026}"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
       SLEEPER_LEAGUE_ID: "${SLEEPER_LEAGUE_ID:-}"
+      ADP_SCORING: "${ADP_SCORING:-ppr}"
+      ADP_TEAMS: "${ADP_TEAMS:-12}"
       CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:8000}"
     volumes:
-      # The seam with the CLI tool: read-only, so the webapp can never write
-      # into a directory another session owns.
-      - ../FantasyDrafterAI/${SEASON:-2026}_Rankings:/rankings:ro
+      # Only its own state. ADP is fetched from the public feed and cached under
+      # /data, so the container has no dependency on the CLI tool's output and
+      # nothing outside this directory is mounted.
       - ./data:/data
     ports:
       # Bound to loopback: the tunnel reaches it, the LAN does not.
