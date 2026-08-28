@@ -56,6 +56,20 @@ class DraftInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class Manager:
+    """One member of the league, as Sleeper knows them."""
+
+    user_id: str
+    display_name: str
+    team_name: str
+    avatar: str | None = None
+
+    @property
+    def label(self) -> str:
+        return self.team_name or self.display_name
+
+
+@dataclass(frozen=True, slots=True)
 class SleeperPick:
     """One pick from the live board."""
 
@@ -213,11 +227,66 @@ class SleeperClient:
             raise SleeperError(f"draft {draft_id} not found")
         return parse_draft(payload)
 
+    def league_managers(self, league_id: str) -> list[Manager]:
+        """The league's members. This is the user list for the keeper tool:
+        a closed set of known people, so nobody has to be signed up."""
+        payload = self._fetch(f"/league/{league_id}/users", f"league-{league_id}-users")
+        if not isinstance(payload, list):
+            raise SleeperError(f"could not read members of league {league_id}")
+        return parse_managers(payload)
+
+    def league_rosters(self, league_id: str) -> dict[str, list[str]]:
+        """Each manager's roster, as Sleeper player ids, keyed by user id."""
+        payload = self._fetch(f"/league/{league_id}/rosters", f"league-{league_id}-rosters")
+        if not isinstance(payload, list):
+            raise SleeperError(f"could not read rosters of league {league_id}")
+        return {
+            str(r.get("owner_id") or ""): [str(p) for p in (r.get("players") or [])]
+            for r in payload
+            if r.get("owner_id")
+        }
+
+    def player_directory(self) -> dict[str, dict]:
+        """Sleeper's whole player dictionary, keyed by player id.
+
+        Twelve thousand entries and several megabytes, which Sleeper asks not
+        to be fetched more than once a day, so this one leans hard on the
+        cache: a stale name is harmless, a hammered endpoint is not.
+        """
+        cached = self._read_cache("players-nfl")
+        if isinstance(cached, dict) and cached:
+            return cached
+
+        payload = self._fetch("/players/nfl", "players-nfl")
+        if not isinstance(payload, dict):
+            raise SleeperError("could not read the player directory")
+        return payload
+
     def picks(self, draft_id: str) -> list[SleeperPick]:
         payload = self._fetch(f"/draft/{draft_id}/picks", f"draft-{draft_id}-picks")
         if not isinstance(payload, list):
             raise SleeperError(f"could not read picks for draft {draft_id}")
         return parse_picks(payload)
+
+
+def parse_managers(users: list[dict]) -> list[Manager]:
+    managers = []
+    for u in users:
+        meta = u.get("metadata") or {}
+        managers.append(
+            Manager(
+                user_id=str(u.get("user_id", "")),
+                display_name=(u.get("display_name") or "").strip(),
+                team_name=(meta.get("team_name") or "").strip(),
+                avatar=u.get("avatar"),
+            )
+        )
+    managers.sort(key=lambda m: m.label.lower())
+    return managers
+
+
+def _extend_client() -> None:  # pragma: no cover - documentation anchor
+    """League reads live on SleeperClient below; see league_managers."""
 
 
 def draft_id_from_url(value: str) -> str:

@@ -8,6 +8,7 @@ defaults to the sibling checkout.
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 # DrafterWeb/backend/app/config.py -> DrafterWeb/
@@ -51,6 +52,23 @@ RANKINGS_DIR: Path | None = Path(_csv_override) if _csv_override else None
 
 DATA_DIR = _env_path("DATA_DIR", PROJECT_ROOT / "data")
 ADP_CACHE_DIR = DATA_DIR / "adp-cache"
+
+# When keeper selections lock. An explicit offset is required rather than
+# assumed, because a deadline an hour out from what people expect is worse
+# than no deadline. Unset leaves selections open indefinitely.
+def _deadline() -> "datetime | None":
+    raw = os.getenv("KEEPER_DEADLINE", "").strip()
+    if not raw:
+        return None
+    try:
+        when = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    # A naive value would compare against UTC and silently shift.
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+KEEPER_DEADLINE = _deadline()
 
 SLEEPER_API = os.getenv("SLEEPER_API", "https://api.sleeper.app/v1")
 SLEEPER_LEAGUE_ID = os.getenv("SLEEPER_LEAGUE_ID", "")

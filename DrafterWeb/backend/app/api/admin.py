@@ -14,6 +14,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..admin import require_admin
+from .. import config as app_config
+from ..integrations.sleeper import SleeperClient, SleeperError
 from ..core.engine import replay
 from ..core.rankings import PlayerPool
 from ..store import SessionStore
@@ -31,6 +33,12 @@ def get_store() -> SessionStore:
     from ..main import get_session_store
 
     return get_session_store()
+
+
+def get_client() -> SleeperClient:
+    from ..main import get_sleeper_client
+
+    return get_sleeper_client()
 
 
 @router.get("/whoami")
@@ -112,3 +120,58 @@ def one_session(
             for slot, team in state.teams.items()
         },
     }
+
+
+@router.get("/keepers")
+def keeper_board(
+    request: Request,
+    store: SessionStore = Depends(get_store),
+) -> dict:
+    """Every selection, and who has not answered yet.
+
+    Visible to the owner before the deadline, unlike the public board: chasing
+    the four people who have not picked is the whole reason to look.
+    """
+    require_admin(request)
+    rows = store.all_keepers()
+    return {
+        "deadline": app_config.KEEPER_DEADLINE.isoformat()
+        if app_config.KEEPER_DEADLINE else None,
+        "chosen": sum(1 for r in rows if r["player_name"]),
+        "total": len(rows),
+        "keepers": rows,
+    }
+
+
+@router.get("/keepers/codes")
+def keeper_codes(
+    request: Request,
+    store: SessionStore = Depends(get_store),
+) -> dict:
+    """The per-manager codes, to send out. Behind Access, like everything here."""
+    require_admin(request)
+    return {"managers": store.managers(with_codes=True)}
+
+
+@router.post("/keepers/sync")
+def keeper_sync(
+    request: Request,
+    store: SessionStore = Depends(get_store),
+    client: SleeperClient = Depends(get_client),
+) -> dict:
+    """Pull the league's members from Sleeper, minting codes for anyone new."""
+    require_admin(request)
+
+    league = app_config.SLEEPER_LEAGUE_ID
+    if not league:
+        raise HTTPException(status_code=503, detail="no league configured")
+
+    try:
+        managers = client.league_managers(league)
+    except SleeperError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    added = store.sync_managers(
+        [(m.user_id, m.display_name, m.team_name) for m in managers]
+    )
+    return {"managers": len(managers), "added": added}

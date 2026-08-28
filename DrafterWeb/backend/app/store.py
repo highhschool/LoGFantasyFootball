@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 import sqlite3
 import uuid
 from dataclasses import asdict
@@ -17,6 +18,13 @@ from pathlib import Path
 
 from .core.engine import LoggedPick
 from .core.models import DraftConfig, Keeper
+
+# Codes people read off a phone and type in, so the ambiguous glyphs are gone:
+# no O or 0, no I, 1 or L. Six characters of this alphabet is about thirty
+# bits, far beyond guessing for a twelve-person league.
+CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+CODE_LENGTH = 6
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -33,7 +41,32 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS keeper_managers (
+    user_id      TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL DEFAULT '',
+    team_name    TEXT NOT NULL DEFAULT '',
+    code         TEXT NOT NULL,
+    claimed_by   TEXT NOT NULL DEFAULT '',
+    claimed_at   TEXT
+);
+
+CREATE TABLE IF NOT EXISTS keeper_picks (
+    user_id      TEXT PRIMARY KEY,
+    player_key   TEXT NOT NULL,
+    player_name  TEXT NOT NULL,
+    position     TEXT NOT NULL,
+    nfl_team     TEXT NOT NULL,
+    adp          REAL NOT NULL,
+    round        INTEGER NOT NULL,
+    submitted_at TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
 """
+
+
+def _new_code() -> str:
+    return "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
 
 
 def _owner_digest(owner_id: str) -> str:
@@ -208,6 +241,141 @@ class SessionStore:
             }
             for r in rows
         ]
+
+    # ------------------------------------------------------------- keepers
+
+    def sync_managers(self, managers: list[tuple[str, str, str]]) -> int:
+        """Record the league's members, minting a code for anyone new.
+
+        Existing codes are left alone: re-syncing must not invalidate a code
+        somebody has already been sent.
+        """
+        added = 0
+        with self._connect() as conn:
+            for user_id, display_name, team_name in managers:
+                existing = conn.execute(
+                    "SELECT code FROM keeper_managers WHERE user_id = ?", (user_id,)
+                ).fetchone()
+                if existing:
+                    conn.execute(
+                        "UPDATE keeper_managers SET display_name = ?, team_name = ?"
+                        " WHERE user_id = ?",
+                        (display_name, team_name, user_id),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO keeper_managers (user_id, display_name,"
+                        " team_name, code) VALUES (?,?,?,?)",
+                        (user_id, display_name, team_name, _new_code()),
+                    )
+                    added += 1
+        return added
+
+    def managers(self, with_codes: bool = False) -> list[dict]:
+        """The league's members. Codes are admin-only."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM keeper_managers ORDER BY"
+                " CASE WHEN team_name = '' THEN display_name ELSE team_name END"
+            ).fetchall()
+
+        out = []
+        for r in rows:
+            entry = {
+                "user_id": r["user_id"],
+                "display_name": r["display_name"],
+                "team_name": r["team_name"],
+                "claimed": bool(r["claimed_by"]),
+            }
+            if with_codes:
+                entry["code"] = r["code"]
+                entry["claimed_at"] = r["claimed_at"]
+            out.append(entry)
+        return out
+
+    def claim_manager(self, user_id: str, code: str, owner_id: str) -> bool:
+        """Tie a browser to a manager, if the code matches.
+
+        A different browser may take a claim over, because people switch
+        phones and there is nobody here to appeal to.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT code FROM keeper_managers WHERE user_id = ?", (user_id,)
+            ).fetchone()
+            if row is None or not secrets.compare_digest(
+                row["code"].upper(), code.strip().upper()
+            ):
+                return False
+
+            conn.execute(
+                "UPDATE keeper_managers SET claimed_by = ?, claimed_at = ?"
+                " WHERE user_id = ?",
+                (owner_id, _now(), user_id),
+            )
+        return True
+
+    def claimed_manager(self, owner_id: str) -> dict | None:
+        """Which manager this browser has claimed, if any."""
+        if not owner_id:
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM keeper_managers WHERE claimed_by = ?", (owner_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "user_id": row["user_id"],
+            "display_name": row["display_name"],
+            "team_name": row["team_name"],
+        }
+
+    def set_keeper(self, user_id: str, pick: dict) -> None:
+        """Record or replace a manager's selection."""
+        stamp = _now()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO keeper_picks (user_id, player_key, player_name,"
+                " position, nfl_team, adp, round, submitted_at, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(user_id) DO UPDATE SET"
+                " player_key=excluded.player_key, player_name=excluded.player_name,"
+                " position=excluded.position, nfl_team=excluded.nfl_team,"
+                " adp=excluded.adp, round=excluded.round,"
+                " updated_at=excluded.updated_at",
+                (user_id, pick["player_key"], pick["player_name"], pick["position"],
+                 pick["nfl_team"], pick["adp"], pick["round"], stamp, stamp),
+            )
+
+    def clear_keeper(self, user_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM keeper_picks WHERE user_id = ?", (user_id,))
+
+    def keeper(self, user_id: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM keeper_picks WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        return None if row is None else dict(row)
+
+    def all_keepers(self) -> list[dict]:
+        """Every manager and their selection, cheapest round first.
+
+        Managers who have not chosen are included with nulls, because who has
+        not answered yet is the thing you actually want to know before a
+        deadline.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT m.user_id, m.display_name, m.team_name,"
+                " k.player_name, k.position, k.nfl_team, k.adp, k.round,"
+                " k.submitted_at, k.updated_at"
+                " FROM keeper_managers m LEFT JOIN keeper_picks k"
+                " ON m.user_id = k.user_id"
+                " ORDER BY k.round IS NULL, k.round, k.adp"
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def list_all(self, mode: str | None = None, limit: int = 200) -> list[dict]:
         """Every session, whoever made it. Admin only.
