@@ -13,6 +13,7 @@ interface Props {
   onPosition: (value: string) => void;
   onDraft: (player: Player) => void;
   className?: string;
+  style?: React.CSSProperties;
 }
 
 export function PlayerTable({
@@ -25,9 +26,11 @@ export function PlayerTable({
   onPosition,
   onDraft,
   className = "",
+  style,
 }: Props) {
   return (
     <section
+      style={style}
       className={`flex min-h-0 flex-col rounded-lg border border-rule bg-surface ${className}`}
     >
       <header className="flex flex-wrap items-center gap-2 border-b border-rule p-3">

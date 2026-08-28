@@ -63,6 +63,14 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
 
   const locked = busy || session.complete || !session.your_turn;
 
+  // Board-to-list split, weighted by how much of the board actually holds
+  // picks: roughly a quarter of the column when empty, up to about 60% when
+  // the draft is done.
+  const filled =
+    session.picks.length / (session.config.teams * session.config.rounds);
+  const boardGrow = 1 + 2 * filled;
+  const listGrow = 3 - filled;
+
   return (
     <div className="flex h-full flex-col">
       <Header
@@ -122,12 +130,16 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
             </button>
           </div>
 
-          {/* Both visible together, but the board takes the larger share when
-              open -- it has 15 rows to show, the list only needs enough rows
-              to pick from. Each scrolls internally rather than pushing the
-              other off screen. */}
+          {/* The board earns its space as it fills. Empty it is mostly blank
+              rows, so it starts small and the list keeps the room; by the end
+              it holds 180 picks worth of reference and takes the larger share.
+              Both scroll internally rather than pushing the other off screen. */}
           {showBoard && (
-            <BoardGrid session={session} className="flex-3 basis-0" />
+            <BoardGrid
+              session={session}
+              style={{ flexGrow: boardGrow }}
+              className="min-h-24 basis-0 motion-safe:transition-[flex-grow] motion-safe:duration-500"
+            />
           )}
 
           <PlayerTable
@@ -139,7 +151,12 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
             onSearch={setSearch}
             onPosition={setPosition}
             onDraft={(p) => act(() => api.pick(session.id, p.key))}
-            className={showBoard ? "flex-2 basis-0" : "flex-1"}
+            style={showBoard ? { flexGrow: listGrow } : undefined}
+            className={
+              showBoard
+                ? "min-h-40 basis-0 motion-safe:transition-[flex-grow] motion-safe:duration-500"
+                : "flex-1"
+            }
           />
         </div>
 

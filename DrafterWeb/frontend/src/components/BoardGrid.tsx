@@ -19,9 +19,11 @@ const TONE: Record<string, string> = {
 export function BoardGrid({
   session,
   className = "",
+  style,
 }: {
   session: DraftSession;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   const { teams, rounds, your_slot } = session.config;
   const byOverall = new Map(session.picks.map((p) => [p.overall, p]));
@@ -30,6 +32,7 @@ export function BoardGrid({
 
   return (
     <section
+      style={style}
       className={`flex min-h-0 flex-col overflow-hidden rounded-lg border border-rule bg-surface ${className}`}
     >
       <header className="flex items-center gap-3 border-b border-rule px-3 py-2">
