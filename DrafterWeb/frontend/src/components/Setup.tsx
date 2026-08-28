@@ -3,6 +3,7 @@ import { api } from "../api";
 import type { AdpProvenance } from "../api";
 import type { KeeperDraft, NewSession, SessionSummary } from "../types";
 import { AdpBadge } from "./AdpBadge";
+import { InlineName } from "./InlineName";
 import { KeeperEditor } from "./KeeperEditor";
 import { SlotPicker } from "./SlotPicker";
 
@@ -19,6 +20,7 @@ interface Props {
   adp?: AdpProvenance;
   onStart: (body: NewSession) => void;
   onResume: (id: string) => void;
+  onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
 }
 
@@ -29,6 +31,7 @@ export function Setup({
   adp,
   onStart,
   onResume,
+  onRename,
   onDelete,
 }: Props) {
   const [teams, setTeams] = useState(12);
@@ -214,7 +217,13 @@ export function Setup({
             {sessions.map((s) => (
               <li key={s.id} className="flex items-center gap-3 px-4 py-2.5">
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{s.name || s.id}</div>
+                  <InlineName
+                    value={s.name || s.id}
+                    onRename={(name) => onRename(s.id, name)}
+                    activateOn="dblclick"
+                    className="-ml-1 block max-w-full text-sm font-medium"
+                    inputClassName="w-full text-sm font-medium"
+                  />
                   <div className="text-xs text-ink-3">
                     {s.picks_made} picks · {new Date(s.updated_at).toLocaleString()}
                   </div>

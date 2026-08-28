@@ -46,6 +46,11 @@ export default function App() {
     }
   }
 
+  async function rename(id: string, name: string) {
+    await api.updateSession(id, { name }).catch(() => undefined);
+    refreshSessions();
+  }
+
   async function remove(id: string) {
     await api.deleteSession(id).catch(() => undefined);
     refreshSessions();
@@ -90,6 +95,7 @@ export default function App() {
       adp={health?.adp}
       onStart={start}
       onResume={resume}
+      onRename={rename}
       onDelete={remove}
     />
   );

@@ -4,7 +4,7 @@ import { AdpBadge } from "./AdpBadge";
 import type { DraftSession, Player } from "../types";
 import { BoardGrid } from "./BoardGrid";
 import { PickClock } from "./PickClock";
-import { SessionTitle } from "./SessionTitle";
+import { InlineName } from "./InlineName";
 import { PlayerTable } from "./PlayerTable";
 import { RosterPanel } from "./RosterPanel";
 
@@ -206,7 +206,12 @@ function Header({
 
       <div className="h-5 w-px bg-rule" />
 
-      <SessionTitle name={session.name} onRename={onRename} />
+      <InlineName
+        value={session.name}
+        onRename={onRename}
+        className="max-w-52 text-sm font-semibold"
+        inputClassName="min-w-32 text-sm font-semibold"
+      />
 
       <div className="h-5 w-px bg-rule" />
 
