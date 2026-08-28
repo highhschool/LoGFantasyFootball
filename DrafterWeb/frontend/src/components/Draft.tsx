@@ -113,27 +113,32 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
             >
               Simulate to end
             </button>
-            <button
-              type="button"
-              onClick={() => setShowBoard((v) => !v)}
-              className="ml-auto rounded-md bg-raised px-3 py-1.5 text-sm font-medium"
-            >
-              {showBoard ? "Hide board" : "Show board"}
-            </button>
+            <div className="ml-auto flex rounded-md bg-raised p-0.5">
+              <Tab active={!showBoard} onClick={() => setShowBoard(false)}>
+                Players
+              </Tab>
+              <Tab active={showBoard} onClick={() => setShowBoard(true)}>
+                Board
+              </Tab>
+            </div>
           </div>
 
-          {showBoard && <BoardGrid session={session} />}
-
-          <PlayerTable
-            players={players}
-            loading={loading}
-            disabled={locked}
-            search={search}
-            position={position}
-            onSearch={setSearch}
-            onPosition={setPosition}
-            onDraft={(p) => act(() => api.pick(session.id, p.key))}
-          />
+          {/* One at a time, each filling the column. Stacking them left the
+              board a few centimetres tall and unreadable. */}
+          {showBoard ? (
+            <BoardGrid session={session} />
+          ) : (
+            <PlayerTable
+              players={players}
+              loading={loading}
+              disabled={locked}
+              search={search}
+              position={position}
+              onSearch={setSearch}
+              onPosition={setPosition}
+              onDraft={(p) => act(() => api.pick(session.id, p.key))}
+            />
+          )}
         </div>
 
         <div className="min-h-0 overflow-y-auto">
@@ -141,6 +146,29 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
         </div>
       </div>
     </div>
+  );
+}
+
+function Tab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`rounded px-3 py-1 text-sm font-medium ${
+        active ? "bg-surface text-ink shadow-sm" : "text-ink-3 hover:text-ink"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 

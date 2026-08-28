@@ -25,7 +25,7 @@ export function PlayerTable({
   onDraft,
 }: Props) {
   return (
-    <section className="flex min-h-0 flex-col rounded-lg border border-rule bg-surface">
+    <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-rule bg-surface">
       <header className="flex flex-wrap items-center gap-2 border-b border-rule p-3">
         <input
           type="search"
