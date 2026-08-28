@@ -21,7 +21,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from .. import config as app_config
-from ..admin import is_admin
 from ..core.keepers import roster_options
 from ..core.rankings import PlayerPool
 from ..integrations.sleeper import SleeperClient, SleeperError
@@ -255,7 +254,6 @@ def unpick(
 
 @router.get("/import")
 def draft_import(
-    request: Request,
     store: SessionStore = Depends(get_store),
 ) -> dict:
     """The league's keepers as a mock draft's keeper list.
@@ -266,11 +264,12 @@ def draft_import(
     reported rather than dropped -- an import that silently lands eleven of
     twelve keepers is worse than one that says why.
 
-    Gated exactly like the board. Importing everyone's keeper before the
-    deadline would publish the selections through the side door the board
-    exists to close, so until then only the owner may.
+    Ungated, unlike the board. The selections are visible in Sleeper anyway,
+    so withholding them here bought no privacy and only stopped people from
+    doing the useful thing: running mock drafts against the real keepers
+    before the draft. They are provisional until the lock, which the caller
+    is told with `open` rather than by being refused.
     """
-    visible = not is_open() or is_admin(request)
     rows = store.all_keepers()
 
     keepers, waiting, unordered = [], [], []
@@ -292,12 +291,13 @@ def draft_import(
 
     keepers.sort(key=lambda k: (k["team_slot"], k["round"]))
     return {
+        # True while selections can still change, which is the caveat on
+        # anything imported from here.
         "open": is_open(),
-        "visible": visible,
         "managers": len(rows),
         "waiting": waiting,
         "unordered": unordered,
-        "keepers": keepers if visible else [],
+        "keepers": keepers,
     }
 
 

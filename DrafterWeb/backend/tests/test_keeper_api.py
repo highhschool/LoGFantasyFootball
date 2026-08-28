@@ -549,8 +549,8 @@ class TestImportingIntoAMockDraft:
         with TestClient(app) as c:
             picked = self._chosen(c, synced["u1"])
 
-        with TestClient(app) as owner:
-            data = owner.get("/api/keeper/import", headers=ADMIN).json()
+        with TestClient(app) as anyone:
+            data = anyone.get("/api/keeper/import").json()
 
         assert len(data["keepers"]) == 1
         entry = data["keepers"][0]
@@ -580,29 +580,27 @@ class TestImportingIntoAMockDraft:
 
         assert [k["team_slot"] for k in keepers] == [1, 2]
 
-    def test_nobody_may_import_before_the_deadline(self, app, synced):
-        """Otherwise it publishes every pick through the door /board closes."""
+    def test_anyone_may_import_before_the_lock(self, app, synced):
+        """Ungated on purpose: the selections are visible in Sleeper anyway.
+
+        Withholding them here bought no privacy and only stopped the useful
+        thing -- mocking against the real keepers while there is still time
+        for the result to matter.
+        """
         with TestClient(app) as c:
             self._chosen(c, synced["u1"])
 
         with TestClient(app) as anyone:
             data = anyone.get("/api/keeper/import").json()
 
-        assert data["open"] is True
-        assert data["visible"] is False
-        assert data["keepers"] == []
-
-    def test_the_owner_may_import_before_the_deadline(self, app, synced):
-        with TestClient(app) as c:
-            self._chosen(c, synced["u1"])
-
-        with TestClient(app) as owner:
-            data = owner.get("/api/keeper/import", headers=ADMIN).json()
-
-        assert data["visible"] is True
         assert len(data["keepers"]) == 1
 
-    def test_everyone_may_import_once_the_deadline_passes(self, app, synced, monkeypatch):
+    def test_it_says_the_keepers_can_still_change(self, app, synced):
+        """The caveat on importing early, and the only thing `open` is for."""
+        with TestClient(app) as anyone:
+            assert anyone.get("/api/keeper/import").json()["open"] is True
+
+    def test_after_the_lock_it_says_they_cannot(self, app, synced, monkeypatch):
         with TestClient(app) as c:
             self._chosen(c, synced["u1"])
 
@@ -613,8 +611,19 @@ class TestImportingIntoAMockDraft:
         with TestClient(app) as anyone:
             data = anyone.get("/api/keeper/import").json()
 
-        assert data["visible"] is True
+        assert data["open"] is False
         assert len(data["keepers"]) == 1
+
+    def test_the_per_manager_board_is_still_private(self, app, synced):
+        """Importing opened up; /board did not, and that was not asked for."""
+        with TestClient(app) as c:
+            self._chosen(c, synced["u1"])
+
+        with TestClient(app) as anyone:
+            board = anyone.get("/api/keeper/board").json()
+
+        assert board["open"] is True
+        assert board["keepers"] == []
 
     def test_a_manager_with_no_slot_is_reported_not_dropped(self, app, synced, monkeypatch):
         """Importing them at slot None would land a keeper on the wrong team."""

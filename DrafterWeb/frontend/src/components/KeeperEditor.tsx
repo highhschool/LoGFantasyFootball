@@ -27,6 +27,10 @@ export function KeeperEditor({ teams, rounds, keepers, onChange }: Props) {
    * the draft order; neither alone can place a player on a board. Replaces
    * rather than appends -- importing twice should leave twelve keepers, not
    * twenty-four.
+   *
+   * Available before the lock, because the point is to mock against the real
+   * keepers while there is still time for it to matter. They are provisional
+   * until then, which the note says.
    */
   async function importLeague() {
     setImporting(true);
@@ -34,14 +38,6 @@ export function KeeperEditor({ teams, rounds, keepers, onChange }: Props) {
     setProblem(null);
     try {
       const data = await keeperApi.forImport();
-
-      if (!data.visible) {
-        setProblem(
-          "Keepers stay hidden until the selection deadline passes, so they " +
-            "cannot be imported yet.",
-        );
-        return;
-      }
 
       const fits = data.keepers.filter(
         (k) => k.team_slot <= teams && k.round <= rounds,
@@ -63,7 +59,10 @@ export function KeeperEditor({ teams, rounds, keepers, onChange }: Props) {
 
       setNote(
         `Imported ${fits.length} of ${data.managers}` +
-          (asides.length ? ` — ${asides.join("; ")}.` : "."),
+          (asides.length ? ` — ${asides.join("; ")}.` : ".") +
+          // Worth saying every time: a mock run today can be built on a
+          // keeper somebody swaps out on Sunday afternoon.
+          (data.open ? " Keepers can still change until the lock." : ""),
       );
       if (fits.length) setOpen(true);
     } catch (e) {

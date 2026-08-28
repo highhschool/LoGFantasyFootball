@@ -222,9 +222,8 @@ export interface KeeperImport {
 }
 
 export interface KeeperImportResult {
+  /** True while selections can still change -- the caveat on an import. */
   open: boolean;
-  /** False while selections are open and you are not the owner. */
-  visible: boolean;
   managers: number;
   /** Managers who have not chosen yet. */
   waiting: string[];

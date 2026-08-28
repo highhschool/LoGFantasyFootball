@@ -327,7 +327,7 @@ function Shell({
         <h1 className="text-3xl font-semibold tracking-tight">Keeper selection</h1>
         {deadline?.deadline && (
           <p className="text-sm text-ink-3">
-            {deadline.open ? "Closes" : "Closed"}{" "}
+            {deadline.open ? "Locks" : "Locked"}{" "}
             {new Date(deadline.deadline).toLocaleString(undefined, {
               weekday: "long",
               hour: "numeric",
