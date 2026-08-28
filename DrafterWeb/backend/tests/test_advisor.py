@@ -152,13 +152,42 @@ class TestRecommendations:
         state = replay(config, pool_2025, [LoggedPick(taken.key)])
         assert all(a.player.key != taken.key for a in recommend(state, pool_2025))
 
-    def test_it_never_suggests_a_position_you_cannot_roster(self, pool_2025):
+    def test_a_filled_position_is_still_offered(self, pool_2025):
+        """Limits guide the advice rather than censoring the board.
+
+        A chalk board is used rather than a hand-built one: draining a single
+        position to fill it leaves every other position artificially flat, and
+        the advice then reflects the fixture rather than the rule under test.
+        """
+        # One receiver slot, so slot 1's opening pick fills it outright.
+        config = DraftConfig(
+            year=2025, teams=12, rounds=15, your_slot=1,
+            position_limits={"WR": 1, "RB": 5, "QB": 3, "TE": 3, "K": 1, "DST": 2},
+        )
+        assert pool_2025.players[0].position == "WR", "fixture no longer opens with a WR"
+
+        chalk = [LoggedPick(p.key) for p in pool_2025.players[:23]]
+        state = replay(config, pool_2025, chalk)
+
+        assert state.team(1).needs(config.position_limits)["WR"] == 0
+        assert state.current.team_slot == 1, "should be back on slot 1's clock"
+
+        positions = [a.player.position for a in recommend(state, pool_2025, limit=8)]
+        assert "WR" in positions, "a filled position must still be offered"
+        assert positions[0] != "WR", "but it should not lead over a position you need"
+
+    def test_an_overfilled_position_says_so(self, pool_2025):
         config = DraftConfig(
             year=2025, teams=2, rounds=2, your_slot=1,
-            position_limits={"QB": 2, "RB": 0, "WR": 0, "TE": 0, "K": 0, "DST": 0},
+            position_limits={"QB": 0, "RB": 2, "WR": 0, "TE": 0, "K": 0, "DST": 0},
         )
         state = replay(config, pool_2025, [])
-        assert {a.player.position for a in recommend(state, pool_2025)} == {"QB"}
+        qb = next(
+            (a for a in recommend(state, pool_2025, limit=8) if a.player.position == "QB"),
+            None,
+        )
+        assert qb is not None
+        assert any("already filled" in r for r in qb.reasons)
 
     def test_a_completed_draft_has_nothing_to_advise(self, pool_2025):
         config = DraftConfig(

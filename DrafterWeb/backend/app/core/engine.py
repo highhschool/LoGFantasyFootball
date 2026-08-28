@@ -121,7 +121,11 @@ class DraftState:
         return [p for p in pool.players if p.key not in self.drafted]
 
     def eligible(self, pool: PlayerPool, slot: int) -> list[Player]:
-        """Available players this team can still legally roster."""
+        """Available players that fit this team's remaining position plan.
+
+        Used by the bots, which need a policy to draft sensibly, and to weight
+        the advisor. It does not constrain what you may draft.
+        """
         counts = self.teams[slot].position_counts
         limits = self.config.position_limits
         return [
@@ -137,15 +141,13 @@ class DraftState:
         if player_key in self.drafted:
             return False, "already drafted"
 
-        player = pool.by_key.get(player_key)
-        if player is None:
+        if pool.by_key.get(player_key) is None:
             return False, "no such player"
 
-        limit = self.config.position_limits.get(player.position, 0)
-        taken = self.teams[slot].position_counts.get(player.position, 0)
-        if taken >= limit:
-            return False, f"roster is full at {player.position} ({taken}/{limit})"
-
+        # Position limits shape the roster the bots build and what the advisor
+        # urges, but they do not stop you drafting. They are your plan, not a
+        # rule, and a draft where the board falls oddly is exactly when you
+        # want to depart from it.
         return True, ""
 
 

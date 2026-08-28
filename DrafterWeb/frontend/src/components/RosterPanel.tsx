@@ -42,10 +42,21 @@ export function RosterPanel({ session }: { session: RosterView }) {
               <span className="text-[11px] font-semibold tracking-wide text-ink-3">
                 {position}
               </span>
+              {/* Negative means you went past your own plan. That is allowed --
+                  the limits are a suggestion -- but it should be visible. */}
               <span
                 className={`tnum text-lg leading-none font-semibold ${
-                  remaining === 0 ? "text-ink-3" : "text-ink"
+                  remaining < 0
+                    ? "text-danger"
+                    : remaining === 0
+                      ? "text-ink-3"
+                      : "text-ink"
                 }`}
+                title={
+                  remaining < 0
+                    ? `${Math.abs(remaining)} more ${position} than you planned for`
+                    : undefined
+                }
               >
                 {remaining}
               </span>

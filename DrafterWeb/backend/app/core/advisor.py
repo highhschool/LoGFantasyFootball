@@ -32,6 +32,11 @@ WEIGHT_DROPOFF = 1.0    # what you lose by waiting a turn at this position
 WEIGHT_VALUE = 0.6      # has fallen past his own ADP
 BYE_PENALTY = 2.0       # would put a third starter on one bye week
 
+# What a position you have already filled is worth. Low enough that a real
+# need outranks a steeper drop elsewhere, high enough that the option is still
+# offered -- the limits are a plan, and the board does not always cooperate.
+FILLED_POSITION_WEIGHT = 0.25
+
 # Beyond this, being early or late stops telling you anything new. Without it,
 # at pick 1 every deep player scores as hundreds of picks of "value", and a
 # round-15 receiver outranks the first name on the board.
@@ -211,6 +216,8 @@ def _reasons(
 
     if need == 1:
         said.append(f"your last {position} spot")
+    elif need <= 0:
+        said.append(f"you have already filled {position} — this would be extra")
 
     if survival >= 0.5 and not holds_up:
         said.append(f"he is {survival:.0%} to still be there himself")
@@ -243,7 +250,7 @@ def recommend(
     now = cell.overall
     until = next_pick_for_slot(state.config, slot, now)
 
-    eligible = state.eligible(pool, slot)
+    eligible = state.available(pool)
     if not eligible:
         return []
 
@@ -251,10 +258,12 @@ def recommend(
     spots_left = max(1, sum(max(0, n) for n in needs.values()))
     byes = state.team(slot).bye_weeks
 
+    # Every position is considered. A filled one is weighted down rather than
+    # dropped, because the limits are a plan and the board does not always
+    # cooperate with it.
     by_position: dict[str, list[Player]] = {}
     for player in eligible:
-        if needs.get(player.position, 0) > 0:
-            by_position.setdefault(player.position, []).append(player)
+        by_position.setdefault(player.position, []).append(player)
 
     advice: list[Advice] = []
     for position, players in by_position.items():
@@ -272,8 +281,9 @@ def recommend(
         # remaining roster this position still has to fill. A steep drop at a
         # position you have already filled is not your problem.
         need_share = need / spots_left
+        weight = 1.0 + need_share if need > 0 else FILLED_POSITION_WEIGHT
         score = (
-            WEIGHT_DROPOFF * (view.dropoff / 10.0) * (0.5 + need_share)
+            WEIGHT_DROPOFF * (view.dropoff / 10.0) * weight
             + WEIGHT_VALUE * (max(-VALUE_CAP, min(VALUE_CAP, value)) / 10.0)
             - (BYE_PENALTY if bye_clash else 0.0)
         )

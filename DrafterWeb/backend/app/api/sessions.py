@@ -302,8 +302,9 @@ def available_players(
     session = _load_or_404(store, session_id, owner)
     state = replay(session["config"], pool, session["log"])
 
-    slot = state.config.your_slot
-    players = state.eligible(pool, slot)
+    # Everyone still on the board, not only those fitting the position plan:
+    # the limits are a suggestion, so a filled position is still draftable.
+    players = state.available(pool)
 
     if position:
         wanted = position.upper()

@@ -72,16 +72,23 @@ class TestLegality:
         with pytest.raises(DraftError, match="already drafted"):
             append_pick(config, pool_2025, [LoggedPick(chase)], chase)
 
-    def test_cannot_exceed_a_position_limit(self, pool_2025):
-        # One team, one round each -- easiest way to fill a position.
+    def test_a_position_limit_does_not_block_a_pick(self, pool_2025):
+        """Limits are a plan, not a rule.
+
+        They shape what the bots draft and what the advisor urges, but the
+        board does not always cooperate and you may depart from the plan.
+        """
         config = DraftConfig(
             year=2025, teams=1, rounds=3, your_slot=1,
             position_limits={"QB": 1, "RB": 1, "WR": 1, "TE": 1, "K": 0, "DST": 0},
         )
-        qbs = [p for p in pool_2025.by_position("QB")][:2]
-        log = [LoggedPick(qbs[0].key)]
-        with pytest.raises(DraftError, match="roster is full at QB"):
-            append_pick(config, pool_2025, log, qbs[1].key)
+        qbs = pool_2025.by_position("QB")[:2]
+        log = append_pick(config, pool_2025, [LoggedPick(qbs[0].key)], qbs[1].key)
+
+        state = replay(config, pool_2025, log)
+        assert state.team(1).position_counts["QB"] == 2
+        # Over the plan by one, and said so rather than hidden.
+        assert state.team(1).needs(config.position_limits)["QB"] == -1
 
     def test_unknown_player_is_rejected(self, config, pool_2025):
         with pytest.raises(DraftError, match="cannot draft"):
