@@ -206,7 +206,7 @@ class TestReasoning:
         assert steep, "expected at least one position under pressure"
         for a in steep:
             assert a.alternative
-            assert any("instead" in r for r in a.reasons)
+            assert any(r.startswith("Next probable pick:") for r in a.reasons)
 
     def test_a_quiet_position_says_so(self, state, pool_2025):
         for a in recommend(state, pool_2025, limit=8):
@@ -216,7 +216,7 @@ class TestReasoning:
     def test_it_never_names_a_player_as_his_own_alternative(self, state, pool_2025):
         for a in recommend(state, pool_2025, limit=8):
             if a.alternative == a.player.name:
-                assert not any("instead" in r for r in a.reasons)
+                assert not any(r.startswith("Next probable pick:") for r in a.reasons)
 
     def test_a_last_roster_spot_is_called_out(self, pool_2025):
         # One of each: every position is your last spot at that position.

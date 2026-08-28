@@ -189,11 +189,11 @@ def _reasons(
     elif holds_up:
         # Naming the same player as the alternative reads as a riddle; the
         # point is simply that this position keeps.
-        said.append(f"{position} keeps — the board here should look much the same next turn")
+        said.append(f"{position} keeps — little changes by next turn")
     else:
         said.append(
-            f"wait a turn and you are likely choosing from {view.likely_later.name} "
-            f"({position}{view.likely_later.pos_rank}) instead — "
+            f"Next probable pick: {view.likely_later.name} "
+            f"({position}{view.likely_later.pos_rank}) — "
             f"{_article(view.dropoff)} {view.dropoff:.0f}-pick drop"
         )
 
