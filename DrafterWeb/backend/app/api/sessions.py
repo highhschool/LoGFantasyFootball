@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from .. import config as app_config
-from ..core import bots
+from ..core import advisor, bots
 from ..core.engine import DraftError, DraftState, LoggedPick, append_pick, replay, undo
 from ..core.models import ConfigError, DraftConfig, Keeper
 from ..core.order import picks_until_next
@@ -322,6 +322,22 @@ def available_players(
             }
             for p in players[:limit]
         ],
+    }
+
+
+@router.get("/{session_id}/advice")
+def advice(
+    session_id: str,
+    limit: int = Query(8, ge=1, le=50),
+    pool: PlayerPool = Depends(get_pool),
+    store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
+) -> dict:
+    """Who to take at this pick, and why."""
+    session = _load_or_404(store, session_id, owner)
+    state = replay(session["config"], pool, session["log"])
+    return {
+        "advice": [a.as_dict() for a in advisor.recommend(state, pool, limit=limit)]
     }
 
 

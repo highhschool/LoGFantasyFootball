@@ -12,10 +12,11 @@ which means it can be behind, and can be blocked by a name it cannot place.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from .. import config as app_config
+from ..core import advisor
 from ..core.engine import DraftState, LoggedPick, replay
 from ..core.models import ConfigError, DraftConfig
 from ..core.order import picks_until_next, validate_config
@@ -281,6 +282,22 @@ def get_draft(
     session = _load_or_404(store, session_id, owner)
     state = replay(session["config"], pool, session["log"])
     return _serialize(session, state, None)
+
+
+@router.get("/{session_id}/advice")
+def advice(
+    session_id: str,
+    limit: int = Query(8, ge=1, le=50),
+    pool: PlayerPool = Depends(get_pool),
+    store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
+) -> dict:
+    """Who to take at this pick, and why."""
+    session = _load_or_404(store, session_id, owner)
+    state = replay(session["config"], pool, session["log"])
+    return {
+        "advice": [a.as_dict() for a in advisor.recommend(state, pool, limit=limit)]
+    }
 
 
 @router.post("/{session_id}/sync")
