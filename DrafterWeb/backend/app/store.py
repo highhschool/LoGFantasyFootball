@@ -467,6 +467,21 @@ class SessionStore:
             })
         return out
 
+    def count_all(self, mode: str | None = None) -> int:
+        """How many sessions exist, ignoring any listing limit.
+
+        Without this a truncated listing looks like the whole set, and the
+        oldest sessions disappear with nothing saying so.
+        """
+        sql = "SELECT COUNT(*) FROM sessions"
+        params: list[object] = []
+        if mode is not None:
+            sql += " WHERE mode = ?"
+            params.append(mode)
+
+        with self._connect() as conn:
+            return conn.execute(sql, params).fetchone()[0]
+
     def load_any(self, session_id: str) -> dict | None:
         """Load regardless of owner. Admin only."""
         with self._connect() as conn:

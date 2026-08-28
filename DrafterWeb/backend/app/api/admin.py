@@ -60,6 +60,7 @@ def all_sessions(
     owners = {s["owner"] for s in sessions}
     return {
         "count": len(sessions),
+        "total": store.count_all(mode=mode),
         "owners": len(owners),
         "sessions": sessions,
     }

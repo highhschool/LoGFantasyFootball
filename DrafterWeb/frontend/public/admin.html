@@ -44,6 +44,37 @@
   .err { color: var(--danger); }
   details { border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
   summary { padding: 0.6rem 0.9rem; cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+  /* A panel is a whole section that folds away, so its own summary carries
+     the heading and the counts -- collapsed, the count is all you need. */
+  details.panel { background: transparent; border: 0; }
+  details.panel > summary {
+    padding: 0; font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em;
+    display: flex; align-items: baseline; gap: 0.6rem; list-style: none;
+  }
+  details.panel > summary::-webkit-details-marker { display: none; }
+  details.panel > summary::before {
+    content: "b8"; font-size: 0.9rem; color: var(--ink-3);
+    transition: transform 120ms ease;
+  }
+  details.panel[open] > summary::before { transform: rotate(90deg); }
+  details.panel > summary .count {
+    font-size: 0.85rem; font-weight: 400; color: var(--ink-3);
+    letter-spacing: 0; margin-left: auto;
+  }
+  details.panel > .body { display: flex; flex-direction: column; gap: 1rem; padding-top: 1rem; }
+  input[type="search"], select {
+    font: inherit; font-size: 0.85rem; padding: 0.35rem 0.6rem; border-radius: 6px;
+    border: 1px solid var(--rule); background: var(--surface); color: var(--ink);
+    min-height: 34px;
+  }
+  input[type="search"] { min-width: 15rem; flex: 1 1 15rem; }
+  th[data-sort] { cursor: pointer; user-select: none; }
+  th[data-sort]:hover { color: var(--ink); }
+  th[data-sort]::after { content: ""; opacity: 0.5; }
+  th[data-sort][data-dir="asc"]::after { content: " 91"; }
+  th[data-sort][data-dir="desc"]::after { content: " 93"; }
+  .more { align-self: flex-start; }
+  .note { margin: 0; font-size: 0.8rem; color: var(--ink-3); }
   .board { padding: 0 0.9rem 0.9rem; overflow-x: auto; }
   .board table { font-size: 0.78rem; }
   .board td, .board th { white-space: nowrap; padding: 0.3rem 0.5rem; }
@@ -55,96 +86,176 @@
 </head>
 <body>
 <main>
-  <header>
-    <h1>Sessions</h1>
-    <p class="sub" id="who">Checking access…</p>
-  </header>
+  <p class="sub" id="who">Checking access…</p>
 
-  <div class="bar">
-    <button data-mode="" aria-pressed="true">All</button>
-    <button data-mode="mock" aria-pressed="false">Mock drafts</button>
-    <button data-mode="assistant" aria-pressed="false">Live drafts</button>
-    <span class="muted" id="summary" style="margin-left:auto"></span>
-  </div>
+  <details class="panel" id="panel-sessions" open>
+    <summary>Sessions <span class="count" id="summary"></span></summary>
+    <div class="body">
+      <div class="bar">
+        <button data-mode="" aria-pressed="true">All</button>
+        <button data-mode="mock" aria-pressed="false">Mock drafts</button>
+        <button data-mode="assistant" aria-pressed="false">Live drafts</button>
+        <input type="search" id="q" placeholder="Search name, owner, or id" autocomplete="off">
+        <select id="f-status" aria-label="Progress">
+          <option value="">Any progress</option>
+          <option value="complete">Complete</option>
+          <option value="partial">In progress</option>
+          <option value="empty">Not started</option>
+        </select>
+        <select id="f-owner" aria-label="Owner">
+          <option value="">Any owner</option>
+        </select>
+        <button id="reset">Clear</button>
+      </div>
 
-  <div class="wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th><th>Tool</th><th>Owner</th>
-          <th class="num">Picks</th><th class="num">Teams</th>
-          <th class="num">Slot</th><th class="num">Keepers</th>
-          <th>Updated</th><th></th>
-        </tr>
-      </thead>
-      <tbody id="rows"><tr><td colspan="9" class="muted">Loading…</td></tr></tbody>
-    </table>
-  </div>
+      <div class="wrap">
+        <table>
+          <thead>
+            <tr>
+              <th data-sort="name">Name</th><th>Tool</th><th data-sort="owner">Owner</th>
+              <th class="num" data-sort="picks_made">Picks</th><th class="num">Teams</th>
+              <th class="num">Slot</th><th class="num">Keepers</th>
+              <th data-sort="updated_at" data-dir="desc">Updated</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="rows"><tr><td colspan="9" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
 
-  <div id="detail"></div>
+      <button class="more" id="more" hidden></button>
+      <p class="note" id="truncated" hidden></p>
+      <div id="detail"></div>
+    </div>
+  </details>
 
   <hr style="border:0;border-top:1px solid var(--rule);margin:0.5rem 0">
 
-  <header>
-    <h1>Keepers</h1>
-    <p class="sub" id="keeper-status">Loading…</p>
-  </header>
+  <details class="panel" id="panel-keepers" open>
+    <summary>Keepers <span class="count" id="keeper-summary"></span></summary>
+    <div class="body">
+      <p class="sub" id="keeper-status" style="margin:0">Loading…</p>
 
-  <div class="bar">
-    <button id="sync">Sync league from Sleeper</button>
-    <button id="toggle-codes" aria-pressed="false">Show codes</button>
-    <span class="muted" id="keeper-summary" style="margin-left:auto"></span>
-  </div>
+      <div class="bar">
+        <button id="sync">Sync league from Sleeper</button>
+        <button id="toggle-codes" aria-pressed="false">Show codes</button>
+      </div>
 
-  <div class="wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Manager</th><th>Team</th><th class="codes-col">Code</th>
-          <th>Keeper</th><th class="num">ADP</th><th class="num">Round</th>
-          <th>Chosen</th>
-        </tr>
-      </thead>
-      <tbody id="keeper-rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
-    </table>
-  </div>
+      <div class="wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Manager</th><th>Team</th><th class="codes-col">Code</th>
+              <th>Keeper</th><th class="num">ADP</th><th class="num">Round</th>
+              <th>Chosen</th>
+            </tr>
+          </thead>
+          <tbody id="keeper-rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </details>
 </main>
 
 <script>
+  // Everything is fetched once and filtered here. The listing is capped at a
+  // thousand rows server-side, which is far more than this league will make,
+  // and filtering in the page keeps every control instant and the owner list
+  // complete rather than dependent on whichever tab is selected.
+  const PAGE = 50;
+
+  let all = [];
   let mode = "";
+  let shown = PAGE;
+  let sort = { key: "updated_at", dir: "desc" };
 
   const fmt = (iso) => {
     try { return new Date(iso).toLocaleString(); } catch { return iso; }
   };
 
+  const progress = (s) =>
+    s.picks_made === 0 ? "empty"
+      : s.picks_made >= s.teams * s.rounds ? "complete"
+        : "partial";
+
+  function filtered() {
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const status = document.getElementById("f-status").value;
+    const owner = document.getElementById("f-owner").value;
+
+    let out = all.filter((s) => {
+      if (mode && s.mode !== mode) return false;
+      if (owner && s.owner !== owner) return false;
+      if (status && progress(s) !== status) return false;
+      if (q && !`${s.name} ${s.owner} ${s.id}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+
+    const { key, dir } = sort;
+    out.sort((a, b) => {
+      const x = a[key] ?? "", y = b[key] ?? "";
+      const cmp = typeof x === "number" ? x - y : String(x).localeCompare(String(y));
+      return dir === "asc" ? cmp : -cmp;
+    });
+    return out;
+  }
+
+  function render() {
+    const rows = document.getElementById("rows");
+    const matches = filtered();
+    const page = matches.slice(0, shown);
+
+    document.getElementById("summary").textContent =
+      matches.length === all.length
+        ? `${all.length} session${all.length === 1 ? "" : "s"}`
+        : `${matches.length} of ${all.length}`;
+
+    const more = document.getElementById("more");
+    more.hidden = matches.length <= page.length;
+    more.textContent = `Show ${Math.min(PAGE, matches.length - page.length)} more` +
+      ` (${matches.length - page.length} hidden)`;
+
+    if (!page.length) {
+      rows.innerHTML = `<tr><td colspan="9" class="muted">${
+        all.length ? "Nothing matches those filters." : "Nothing yet."
+      }</td></tr>`;
+      return;
+    }
+
+    rows.innerHTML = page.map((s) => `
+      <tr>
+        <td>${escape(s.name || s.id)}</td>
+        <td class="muted">${s.mode === "mock" ? "mock" : "live"}</td>
+        <td class="muted">${escape(s.owner)}</td>
+        <td class="num">${s.picks_made}</td>
+        <td class="num">${s.teams}</td>
+        <td class="num">${s.your_slot}</td>
+        <td class="num">${s.keepers || ""}</td>
+        <td class="muted">${fmt(s.updated_at)}</td>
+        <td><button data-open="${s.id}">Board</button></td>
+      </tr>`).join("");
+  }
+
   async function load() {
     const rows = document.getElementById("rows");
     try {
-      const url = "/api/admin/sessions" + (mode ? `?mode=${mode}` : "");
-      const res = await fetch(url);
+      const res = await fetch("/api/admin/sessions?limit=1000");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      all = data.sessions;
 
-      document.getElementById("summary").textContent =
-        `${data.count} session${data.count === 1 ? "" : "s"} · ${data.owners} owner${data.owners === 1 ? "" : "s"}`;
+      // A listing that quietly stops at the limit looks like the whole set.
+      const note = document.getElementById("truncated");
+      note.hidden = !(data.total > data.count);
+      note.textContent = `Showing the ${data.count} most recent of ${data.total}.`;
 
-      if (!data.sessions.length) {
-        rows.innerHTML = '<tr><td colspan="9" class="muted">Nothing yet.</td></tr>';
-        return;
-      }
+      const owners = [...new Set(all.map((s) => s.owner))].sort();
+      const select = document.getElementById("f-owner");
+      const keep = select.value;
+      select.innerHTML = '<option value="">Any owner</option>' +
+        owners.map((o) => `<option value="${escape(o)}">${escape(o)}</option>`).join("");
+      select.value = owners.includes(keep) ? keep : "";
 
-      rows.innerHTML = data.sessions.map((s) => `
-        <tr>
-          <td>${escape(s.name || s.id)}</td>
-          <td class="muted">${s.mode === "mock" ? "mock" : "live"}</td>
-          <td class="muted">${escape(s.owner)}</td>
-          <td class="num">${s.picks_made}</td>
-          <td class="num">${s.teams}</td>
-          <td class="num">${s.your_slot}</td>
-          <td class="num">${s.keepers || ""}</td>
-          <td class="muted">${fmt(s.updated_at)}</td>
-          <td><button data-open="${s.id}">Board</button></td>
-        </tr>`).join("");
+      render();
     } catch (e) {
       rows.innerHTML = `<tr><td colspan="9" class="err">Could not load: ${escape(String(e))}</td></tr>`;
     }
@@ -192,13 +303,65 @@
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
+  // Any filter changing resets the page: paging into rows that no longer
+  // match is the fastest way to make a list look broken.
+  function refilter() {
+    shown = PAGE;
+    render();
+  }
+
+  document.getElementById("q").addEventListener("input", refilter);
+  document.getElementById("f-status").addEventListener("change", refilter);
+  document.getElementById("f-owner").addEventListener("change", refilter);
+
+  document.getElementById("more").addEventListener("click", () => {
+    shown += PAGE;
+    render();
+  });
+
+  document.getElementById("reset").addEventListener("click", () => {
+    document.getElementById("q").value = "";
+    document.getElementById("f-status").value = "";
+    document.getElementById("f-owner").value = "";
+    mode = "";
+    document.querySelectorAll("[data-mode]").forEach((b) =>
+      b.setAttribute("aria-pressed", String(b.dataset.mode === "")));
+    refilter();
+  });
+
+  const flip = (dir) => (dir === "asc" ? "desc" : "asc");
+
+  document.querySelectorAll("th[data-sort]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.sort;
+      // Text reads best A-Z first; counts and dates read best largest first.
+      const fresh = key === "name" || key === "owner" ? "asc" : "desc";
+      sort = { key, dir: sort.key === key && sort.dir === fresh ? flip(fresh) : fresh };
+      document.querySelectorAll("th[data-sort]").forEach((o) => delete o.dataset.dir);
+      th.dataset.dir = sort.dir;
+      render();
+    });
+  });
+
+  // The panels remember whether they were folded, since this page is opened
+  // again and again and usually for one of its two halves.
+  document.querySelectorAll("details.panel").forEach((panel) => {
+    try {
+      const saved = localStorage.getItem(`ngfl:${panel.id}`);
+      if (saved !== null) panel.open = saved === "1";
+    } catch {}
+    panel.addEventListener("toggle", () => {
+      try { localStorage.setItem(`ngfl:${panel.id}`, panel.open ? "1" : "0"); } catch {}
+    });
+  });
+
   document.addEventListener("click", (e) => {
     const tab = e.target.closest("[data-mode]");
     if (tab) {
       mode = tab.dataset.mode;
       document.querySelectorAll("[data-mode]").forEach((b) =>
         b.setAttribute("aria-pressed", String(b === tab)));
-      load();
+      refilter();
     }
     const open = e.target.closest("[data-open]");
     if (open) openBoard(open.dataset.open);

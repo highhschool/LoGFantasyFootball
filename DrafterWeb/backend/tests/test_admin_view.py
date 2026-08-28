@@ -128,6 +128,57 @@ class TestSeeingEverySession:
         assert client.get("/api/admin/sessions/nope", headers=ADMIN).status_code == 404
 
 
+class TestTheListingReportsItsOwnLimit:
+    """The page filters and pages what it is given, so what it is given matters.
+
+    A listing that quietly stops at its limit looks like the whole set, and
+    the oldest sessions vanish with nothing on the page saying so.
+    """
+
+    def test_the_total_counts_past_the_limit(self, shared_app):
+        with TestClient(shared_app) as maker:
+            for i in range(5):
+                make_session(maker, name=f"draft {i}")
+
+            with TestClient(shared_app) as admin:
+                listing = admin.get(
+                    "/api/admin/sessions?limit=2", headers=ADMIN
+                ).json()
+
+        assert listing["count"] == 2, "the page asked for two"
+        assert listing["total"] >= 5, "but must be told how many there are"
+        assert len(listing["sessions"]) == 2
+
+    def test_the_total_matches_when_nothing_is_cut(self, client):
+        make_session(client, name="only one")
+        listing = client.get("/api/admin/sessions", headers=ADMIN).json()
+        assert listing["total"] == listing["count"]
+
+    def test_the_total_respects_the_mode_filter(self, shared_app):
+        """Otherwise the note would claim rows the filter already excluded."""
+        with TestClient(shared_app) as maker:
+            make_session(maker, name="a mock")
+
+            with TestClient(shared_app) as admin:
+                mock = admin.get(
+                    "/api/admin/sessions?mode=mock", headers=ADMIN
+                ).json()
+                live = admin.get(
+                    "/api/admin/sessions?mode=assistant", headers=ADMIN
+                ).json()
+
+        assert mock["total"] == mock["count"] >= 1
+        assert live["total"] == live["count"] == 0
+
+    def test_every_row_carries_what_the_filters_need(self, client):
+        """The page buckets by progress, which needs the shape of the draft."""
+        make_session(client, name="shapely")
+        row = client.get("/api/admin/sessions", headers=ADMIN).json()["sessions"][0]
+        for field in ("id", "name", "mode", "owner", "picks_made", "teams", "rounds",
+                      "updated_at"):
+            assert field in row, field
+
+
 class TestItDestroysNothing:
     """Viewing is one thing; deleting someone's draft is a larger blast radius.
 
