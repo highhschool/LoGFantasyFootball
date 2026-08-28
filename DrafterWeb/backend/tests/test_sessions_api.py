@@ -189,3 +189,104 @@ class TestKeepersOptional:
         ])
         assert state["unresolved_keepers"] == ["Nobody McFake"]
         assert state["your_turn"] is True
+
+
+class TestPickClock:
+    def test_defaults_to_off(self, client):
+        assert new_session(client)["pick_seconds"] == 0
+
+    def test_can_be_set_at_creation(self, client):
+        assert new_session(client, pick_seconds=60)["pick_seconds"] == 60
+
+    def test_can_be_changed_mid_draft(self, client):
+        state = new_session(client, pick_seconds=30)
+        patched = client.patch(
+            f"/api/sessions/{state['id']}", json={"pick_seconds": 90}
+        ).json()
+        assert patched["pick_seconds"] == 90
+
+    def test_can_be_disabled(self, client):
+        state = new_session(client, pick_seconds=60)
+        patched = client.patch(f"/api/sessions/{state['id']}", json={"pick_seconds": 0}).json()
+        assert patched["pick_seconds"] == 0
+
+    def test_absurd_clocks_are_rejected(self, client):
+        assert client.post("/api/sessions", json={"pick_seconds": 99999}).status_code == 422
+        assert client.post("/api/sessions", json={"pick_seconds": -5}).status_code == 422
+
+
+class TestRename:
+    def test_rename_persists(self, client):
+        state = new_session(client, name="first")
+        patched = client.patch(f"/api/sessions/{state['id']}", json={"name": "second"}).json()
+        assert patched["name"] == "second"
+        assert client.get(f"/api/sessions/{state['id']}").json()["name"] == "second"
+
+    def test_rename_shows_in_the_listing(self, client):
+        state = new_session(client, name="before")
+        client.patch(f"/api/sessions/{state['id']}", json={"name": "after"})
+        names = {s["name"] for s in client.get("/api/sessions").json()["sessions"]}
+        assert "after" in names and "before" not in names
+
+    def test_whitespace_is_trimmed(self, client):
+        state = new_session(client)
+        patched = client.patch(f"/api/sessions/{state['id']}", json={"name": "  spaced  "}).json()
+        assert patched["name"] == "spaced"
+
+    def test_rename_does_not_disturb_the_draft(self, client):
+        state = new_session(client)
+        before = [p["player_name"] for p in state["picks"]]
+        patched = client.patch(f"/api/sessions/{state['id']}", json={"name": "x"}).json()
+        assert [p["player_name"] for p in patched["picks"]] == before
+
+    def test_patching_a_missing_session_is_404(self, client):
+        assert client.patch("/api/sessions/nope", json={"name": "x"}).status_code == 404
+
+    def test_an_empty_patch_changes_nothing(self, client):
+        state = new_session(client, name="keep", pick_seconds=45)
+        patched = client.patch(f"/api/sessions/{state['id']}", json={}).json()
+        assert patched["name"] == "keep"
+        assert patched["pick_seconds"] == 45
+
+
+class TestDraftPositionSelection:
+    @pytest.mark.parametrize("slot", [1, 6, 12])
+    def test_any_slot_is_usable(self, client, slot):
+        state = new_session(client, your_slot=slot, teams=12)
+        assert state["config"]["your_slot"] == slot
+        assert len(state["picks"]) == slot - 1
+
+    def test_slot_must_fit_the_league(self, client):
+        assert client.post(
+            "/api/sessions", json={"teams": 10, "your_slot": 12}
+        ).status_code == 422
+
+
+class TestKeepersPerTeam:
+    def test_one_keeper_for_every_team(self, client):
+        keepers = [
+            {"team_slot": slot, "round": 1, "player_name": name}
+            for slot, name in enumerate(
+                ["Ja'Marr Chase", "Bijan Robinson", "Saquon Barkley", "Jahmyr Gibbs"], start=1
+            )
+        ]
+        state = new_session(client, teams=12, your_slot=12, keepers=keepers)
+        kept = [p for p in state["picks"] if p["source"] == "keeper"]
+        assert len(kept) == 4
+        assert state["unresolved_keepers"] == []
+
+    def test_multiple_keepers_for_one_team(self, client):
+        keepers = [
+            {"team_slot": 1, "round": 1, "player_name": "Ja'Marr Chase"},
+            {"team_slot": 1, "round": 2, "player_name": "Bijan Robinson"},
+        ]
+        state = new_session(client, your_slot=6, keepers=keepers)
+        assert len([p for p in state["picks"] if p["source"] == "keeper"]) >= 1
+
+    def test_a_keeper_outside_the_league_is_rejected(self, client):
+        r = client.post("/api/sessions", json={
+            "teams": 10, "your_slot": 1,
+            "keepers": [{"team_slot": 11, "round": 1, "player_name": "Ja'Marr Chase"}],
+        })
+        assert r.status_code == 422
+        assert "slot 11" in r.json()["detail"]

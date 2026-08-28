@@ -37,12 +37,21 @@ class SessionIn(BaseModel):
     your_slot: int = Field(default=6, ge=1)
     randomness: float = Field(default=1.0, ge=0.0, le=3.0)
     seed: int | None = None
+    # 0 disables the clock. Capped at 10 minutes; longer is not a draft.
+    pick_seconds: int = Field(default=0, ge=0, le=600)
     position_limits: dict[str, int] | None = None
     keepers: list[KeeperIn] = Field(default_factory=list)
 
 
 class PickIn(BaseModel):
     player_key: str
+
+
+class SessionPatch(BaseModel):
+    """Settings that can change after a draft has started."""
+
+    name: str | None = Field(default=None, max_length=80)
+    pick_seconds: int | None = Field(default=None, ge=0, le=600)
 
 
 # ------------------------------------------------------------- dependencies
@@ -75,6 +84,7 @@ def _serialize(session: dict, state: DraftState, pool: PlayerPool) -> dict:
         "name": session["name"],
         "mode": session["mode"],
         "seed": session["seed"],
+        "pick_seconds": session.get("pick_seconds", 0),
         "config": {
             "teams": state.config.teams,
             "rounds": state.config.rounds,
@@ -170,7 +180,8 @@ def create_session(
 
     seed = body.seed if body.seed is not None else random.randrange(1, 2**31)
     session_id = store.create(
-        draft, seed=seed, name=body.name, mode="mock", randomness=body.randomness
+        draft, seed=seed, name=body.name, mode="mock",
+        randomness=body.randomness, pick_seconds=body.pick_seconds,
     )
     session = _load_or_404(store, session_id)
 
@@ -195,6 +206,30 @@ def get_session(
     session = _load_or_404(store, session_id)
     state = replay(session["config"], pool, session["log"])
     return _serialize(session, state, pool)
+
+
+@router.patch("/{session_id}")
+def update_session(
+    session_id: str,
+    body: SessionPatch,
+    pool: PlayerPool = Depends(get_pool),
+    store: SessionStore = Depends(get_store),
+) -> dict:
+    """Rename a session, or change its pick clock, mid-draft.
+
+    Deliberately narrow: teams, rounds, slot and keepers all change what the
+    board means, so altering them after picks exist would invalidate the log.
+    Those stay fixed at creation.
+    """
+    _load_or_404(store, session_id)
+
+    if body.name is not None:
+        store.rename(session_id, body.name.strip())
+    if body.pick_seconds is not None:
+        store.set_pick_seconds(session_id, body.pick_seconds)
+
+    session = _load_or_404(store, session_id)
+    return _serialize(session, replay(session["config"], pool, session["log"]), pool)
 
 
 @router.get("/{session_id}/available")

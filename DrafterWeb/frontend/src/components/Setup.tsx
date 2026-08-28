@@ -1,7 +1,9 @@
 import { useState } from "react";
 import type { AdpProvenance } from "../api";
-import type { NewSession, SessionSummary } from "../types";
+import type { KeeperDraft, NewSession, SessionSummary } from "../types";
 import { AdpBadge } from "./AdpBadge";
+import { KeeperEditor } from "./KeeperEditor";
+import { SlotPicker } from "./SlotPicker";
 
 interface Props {
   sessions: SessionSummary[];
@@ -30,6 +32,9 @@ export function Setup({
   const [rounds, setRounds] = useState(15);
   const [slot, setSlot] = useState(6);
   const [randomness, setRandomness] = useState(1);
+  const [pickSeconds, setPickSeconds] = useState(0);
+  const [name, setName] = useState("");
+  const [keepers, setKeepers] = useState<KeeperDraft[]>([]);
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
@@ -76,15 +81,29 @@ export function Setup({
             />
           </Field>
 
-          <Field label={`Your draft slot — pick ${slot} of ${teams}`}>
+          <Field label="Session name">
             <input
-              type="range"
-              min={1}
-              max={teams}
-              value={slot}
-              onChange={(e) => setSlot(Number(e.target.value))}
-              className="w-full accent-accent"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={`Slot ${slot} mock`}
+              maxLength={80}
+              className="w-full rounded-md border border-rule bg-ground px-3 py-2"
             />
+          </Field>
+
+          <Field label="On the clock">
+            <select
+              value={pickSeconds}
+              onChange={(e) => setPickSeconds(Number(e.target.value))}
+              className="w-full rounded-md border border-rule bg-ground px-3 py-2"
+            >
+              <option value={0}>No timer</option>
+              <option value={30}>30 seconds</option>
+              <option value={60}>1 minute</option>
+              <option value={90}>90 seconds</option>
+              <option value={120}>2 minutes</option>
+              <option value={300}>5 minutes</option>
+            </select>
           </Field>
 
           <Field label={randomnessLabel(randomness)}>
@@ -100,6 +119,17 @@ export function Setup({
           </Field>
         </div>
 
+        <div className="mt-4">
+          <SlotPicker teams={teams} slot={slot} onChange={setSlot} />
+        </div>
+
+        {pickSeconds > 0 && (
+          <p className="mt-3 text-sm text-ink-3">
+            When the clock runs out your pick is made for you, the same as a real
+            draft. It only runs on your turn.
+          </p>
+        )}
+
         <p className="mt-3 text-sm text-ink-3">
           Bots draft by ADP, jittered by each player's real draft-to-draft spread,
           so no two mocks come out the same. Set it to zero for a strict
@@ -112,13 +142,28 @@ export function Setup({
           type="button"
           disabled={starting}
           onClick={() =>
-            onStart({ name: `Slot ${slot}`, teams, rounds, your_slot: slot, randomness })
+            onStart({
+              name: name.trim() || `Slot ${slot} mock`,
+              teams,
+              rounds,
+              your_slot: slot,
+              randomness,
+              pick_seconds: pickSeconds,
+              keepers: keepers.filter((k) => k.player_name.trim() !== ""),
+            })
           }
           className="mt-4 rounded-md bg-accent px-4 py-2 font-semibold text-ground disabled:opacity-50"
         >
           {starting ? "Starting…" : "Start draft"}
         </button>
       </section>
+
+      <KeeperEditor
+        teams={teams}
+        rounds={rounds}
+        keepers={keepers}
+        onChange={setKeepers}
+      />
 
       {sessions.length > 0 && (
         <section className="rounded-lg border border-rule bg-surface">

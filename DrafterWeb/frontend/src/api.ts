@@ -1,4 +1,10 @@
-import type { DraftSession, NewSession, Player, SessionSummary } from "./types";
+import type {
+  DraftSession,
+  NewSession,
+  Player,
+  SessionPatch,
+  SessionSummary,
+} from "./types";
 
 /** Surfaces the server's own message rather than a generic failure string. */
 export class ApiError extends Error {
@@ -66,6 +72,12 @@ export const api = {
     }),
 
   getSession: (id: string) => request<DraftSession>(`/api/sessions/${id}`),
+
+  updateSession: (id: string, patch: SessionPatch) =>
+    request<DraftSession>(`/api/sessions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
 
   deleteSession: (id: string) =>
     request<{ deleted: string }>(`/api/sessions/${id}`, { method: "DELETE" }),

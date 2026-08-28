@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     mode        TEXT NOT NULL DEFAULT 'mock',
     seed        INTEGER NOT NULL,
     randomness  REAL NOT NULL DEFAULT 1.0,
+    pick_seconds INTEGER NOT NULL DEFAULT 0,
     config_json TEXT NOT NULL,
     log_json    TEXT NOT NULL,
     created_at  TEXT NOT NULL,
@@ -56,6 +57,22 @@ def log_from_json(raw: str) -> list[LoggedPick]:
     return [LoggedPick(**entry) for entry in json.loads(raw)]
 
 
+# CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so
+# columns added after a database was first created need adding explicitly.
+# Existing sessions keep working rather than erroring on a missing column.
+ADDED_COLUMNS = {
+    "randomness": "REAL NOT NULL DEFAULT 1.0",
+    "pick_seconds": "INTEGER NOT NULL DEFAULT 0",
+}
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    have = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
+    for column, spec in ADDED_COLUMNS.items():
+        if column not in have:
+            conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} {spec}")
+
+
 class SessionStore:
     def __init__(self, db_path: Path) -> None:
         self.path = Path(db_path)
@@ -67,6 +84,7 @@ class SessionStore:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
+        _migrate(conn)
         return conn
 
     def create(
@@ -76,14 +94,16 @@ class SessionStore:
         name: str = "",
         mode: str = "mock",
         randomness: float = 1.0,
+        pick_seconds: int = 0,
     ) -> str:
         session_id = uuid.uuid4().hex[:12]
         stamp = _now()
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO sessions (id, name, mode, seed, randomness, config_json,"
-                " log_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                (session_id, name, mode, seed, randomness,
+                "INSERT INTO sessions (id, name, mode, seed, randomness, pick_seconds,"
+                " config_json, log_json, created_at, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (session_id, name, mode, seed, randomness, pick_seconds,
                  config_to_json(config), "[]", stamp, stamp),
             )
         return session_id
@@ -101,6 +121,7 @@ class SessionStore:
             "mode": row["mode"],
             "seed": row["seed"],
             "randomness": row["randomness"],
+            "pick_seconds": row["pick_seconds"],
             "config": config_from_json(row["config_json"]),
             "log": log_from_json(row["log_json"]),
             "created_at": row["created_at"],
@@ -113,6 +134,22 @@ class SessionStore:
                 "UPDATE sessions SET log_json = ?, updated_at = ? WHERE id = ?",
                 (log_to_json(log), _now(), session_id),
             )
+
+    def rename(self, session_id: str, name: str) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE sessions SET name = ?, updated_at = ? WHERE id = ?",
+                (name, _now(), session_id),
+            )
+            return cur.rowcount > 0
+
+    def set_pick_seconds(self, session_id: str, seconds: int) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE sessions SET pick_seconds = ?, updated_at = ? WHERE id = ?",
+                (seconds, _now(), session_id),
+            )
+            return cur.rowcount > 0
 
     def list(self, limit: int = 25) -> list[dict]:
         with self._connect() as conn:

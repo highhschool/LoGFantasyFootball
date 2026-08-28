@@ -44,6 +44,7 @@ export interface DraftSession {
   name: string;
   mode: string;
   seed: number;
+  pick_seconds: number;
   config: {
     teams: number;
     rounds: number;
@@ -70,11 +71,24 @@ export interface SessionSummary {
   picks_made: number;
 }
 
+export interface KeeperDraft {
+  team_slot: number;
+  round: number;
+  player_name: string;
+}
+
 export interface NewSession {
   name: string;
   teams: number;
   rounds: number;
   your_slot: number;
   randomness: number;
+  pick_seconds: number;
+  keepers: KeeperDraft[];
   seed?: number;
+}
+
+export interface SessionPatch {
+  name?: string;
+  pick_seconds?: number;
 }

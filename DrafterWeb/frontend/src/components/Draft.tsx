@@ -3,6 +3,8 @@ import { api, ApiError, type AdpProvenance } from "../api";
 import { AdpBadge } from "./AdpBadge";
 import type { DraftSession, Player } from "../types";
 import { BoardGrid } from "./BoardGrid";
+import { PickClock } from "./PickClock";
+import { SessionTitle } from "./SessionTitle";
 import { PlayerTable } from "./PlayerTable";
 import { RosterPanel } from "./RosterPanel";
 
@@ -63,7 +65,20 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <Header session={session} busy={busy} onExit={onExit} adp={adp} />
+      <Header
+        session={session}
+        busy={busy}
+        onExit={onExit}
+        adp={adp}
+        onRename={(name) => act(() => api.updateSession(session.id, { name }))}
+        onExpire={() => {
+          // Only autopick if it is still genuinely our turn; a slow request
+          // could otherwise fire this after the board already moved on.
+          if (session.your_turn && !session.complete && !busy) {
+            act(() => api.autopick(session.id));
+          }
+        }}
+      />
 
       {error && (
         <p className="border-b border-danger/30 bg-danger/10 px-4 py-2 text-sm text-danger">
@@ -134,11 +149,15 @@ function Header({
   busy,
   onExit,
   adp,
+  onRename,
+  onExpire,
 }: {
   session: DraftSession;
   busy: boolean;
   onExit: () => void;
   adp?: AdpProvenance;
+  onRename: (name: string) => void;
+  onExpire: () => void;
 }) {
   const clock = session.on_the_clock;
 
@@ -151,6 +170,10 @@ function Header({
       >
         ← Sessions
       </button>
+
+      <div className="h-5 w-px bg-rule" />
+
+      <SessionTitle name={session.name} onRename={onRename} />
 
       <div className="h-5 w-px bg-rule" />
 
@@ -181,6 +204,13 @@ function Header({
               {session.picks_until_your_next} picks until your turn
             </span>
           )}
+
+          <PickClock
+            seconds={session.pick_seconds}
+            active={session.your_turn && !busy}
+            resetKey={session.picks.length}
+            onExpire={onExpire}
+          />
         </>
       )}
 
