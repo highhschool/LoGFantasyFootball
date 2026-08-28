@@ -8,6 +8,12 @@ import { SessionTitle } from "./SessionTitle";
 import { PlayerTable } from "./PlayerTable";
 import { RosterPanel } from "./RosterPanel";
 
+// The board's share of the main column: at the first pick, and once every
+// cell is filled. It never takes more than the larger share, because the
+// player list is what you actually act on.
+const BOARD_MIN_SHARE = 0.25;
+const BOARD_MAX_SHARE = 0.44;
+
 interface Props {
   adp?: AdpProvenance;
   session: DraftSession;
@@ -64,12 +70,13 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
   const locked = busy || session.complete || !session.your_turn;
 
   // Board-to-list split, weighted by how much of the board actually holds
-  // picks: roughly a quarter of the column when empty, up to about 60% when
-  // the draft is done.
+  // picks. Expressed as the board's share of the column rather than as grow
+  // ratios, so the two numbers below are the thing you actually want to tune.
   const filled =
     session.picks.length / (session.config.teams * session.config.rounds);
-  const boardGrow = 1 + 2 * filled;
-  const listGrow = 3 - filled;
+  const boardShare = BOARD_MIN_SHARE + (BOARD_MAX_SHARE - BOARD_MIN_SHARE) * filled;
+  const boardGrow = boardShare;
+  const listGrow = 1 - boardShare;
 
   return (
     <div className="flex h-full flex-col">
