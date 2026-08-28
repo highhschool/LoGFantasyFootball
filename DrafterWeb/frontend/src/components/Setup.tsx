@@ -57,7 +57,7 @@ export function Setup({
                 setTeams(next);
                 if (slot > next) setSlot(next);
               }}
-              className="w-full rounded-md border border-rule bg-ground px-3 py-2"
+              className="select-field w-full rounded-md border border-rule bg-ground px-3 py-2"
             >
               {[8, 10, 12].map((n) => (
                 <option key={n} value={n}>
@@ -71,7 +71,7 @@ export function Setup({
             <select
               value={rounds}
               onChange={(e) => setRounds(Number(e.target.value))}
-              className="w-full rounded-md border border-rule bg-ground px-3 py-2"
+              className="select-field w-full rounded-md border border-rule bg-ground px-3 py-2"
             >
               {Array.from({ length: MAX_ROUNDS }, (_, i) => i + 1).map((n) => (
                 <option key={n} value={n}>
@@ -95,7 +95,7 @@ export function Setup({
             <select
               value={pickSeconds}
               onChange={(e) => setPickSeconds(Number(e.target.value))}
-              className="w-full rounded-md border border-rule bg-ground px-3 py-2"
+              className="select-field w-full rounded-md border border-rule bg-ground px-3 py-2"
             >
               <option value={0}>No timer</option>
               <option value={30}>30 seconds</option>

@@ -119,7 +119,7 @@ function KeeperRow({
         <select
           value={keeper.team_slot}
           onChange={(e) => onChange({ team_slot: Number(e.target.value) })}
-          className="rounded border border-rule bg-surface px-2 py-1 text-sm text-ink"
+          className="select-field rounded border border-rule bg-surface px-2 py-1 text-sm text-ink"
         >
           {Array.from({ length: teams }, (_, i) => i + 1).map((n) => (
             <option key={n} value={n}>
@@ -134,7 +134,7 @@ function KeeperRow({
         <select
           value={keeper.round}
           onChange={(e) => onChange({ round: Number(e.target.value) })}
-          className="rounded border border-rule bg-surface px-2 py-1 text-sm text-ink"
+          className="select-field rounded border border-rule bg-surface px-2 py-1 text-sm text-ink"
         >
           {Array.from({ length: rounds }, (_, i) => i + 1).map((n) => (
             <option key={n} value={n}>
