@@ -36,6 +36,10 @@ export function Setup({
   const [pickSeconds, setPickSeconds] = useState(0);
   const [name, setName] = useState("");
   const [keepers, setKeepers] = useState<KeeperDraft[]>([]);
+
+  // A keeper row with no player used to be filtered out at submit, so the
+  // draft ran without it and nothing said why. Block instead.
+  const blankKeepers = keepers.filter((k) => k.player_name.trim() === "").length;
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
       <header>
@@ -136,11 +140,20 @@ export function Setup({
           chalk board.
         </p>
 
+        {blankKeepers > 0 && (
+          <p className="mt-3 text-sm text-warn">
+            {blankKeepers === 1
+              ? "One keeper has no player set."
+              : `${blankKeepers} keepers have no player set.`}{" "}
+            Name them or remove the rows before starting.
+          </p>
+        )}
+
         {error && <p className="mt-3 text-sm text-danger">{error}</p>}
 
         <button
           type="button"
-          disabled={starting}
+          disabled={starting || blankKeepers > 0}
           onClick={() =>
             onStart({
               name: name.trim() || `Slot ${slot} mock`,
@@ -149,7 +162,7 @@ export function Setup({
               your_slot: slot,
               randomness,
               pick_seconds: pickSeconds,
-              keepers: keepers.filter((k) => k.player_name.trim() !== ""),
+              keepers,
             })
           }
           className="mt-4 rounded-md bg-accent px-4 py-2 font-semibold text-ground disabled:opacity-50"

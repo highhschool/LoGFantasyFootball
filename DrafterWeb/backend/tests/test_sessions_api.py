@@ -342,3 +342,48 @@ class TestRoundCap:
         assert r.status_code == 422
         detail = r.json()["detail"]
         assert "player pool only has" in detail
+
+
+class TestKeeperOnYourOwnSlot:
+    """A keeper on your own draft slot in round 1.
+
+    Reported as the keeper not being applied; the cause was in the setup UI,
+    but the engine path is worth pinning down so it cannot regress.
+    """
+
+    def test_it_is_applied_and_appears_on_your_roster(self, client):
+        state = new_session(client, your_slot=6, keepers=[
+            {"team_slot": 6, "round": 1, "player_name": "Ja'Marr Chase"},
+        ])
+        assert state["unresolved_keepers"] == []
+
+        pick_six = next(p for p in state["picks"] if p["overall"] == 6)
+        assert pick_six["player_name"] == "Ja'Marr Chase"
+        assert pick_six["source"] == "keeper"
+        assert pick_six["team_slot"] == 6
+
+        assert [(r["player_name"], r["round"]) for r in state["your_roster"]] == [
+            ("Ja'Marr Chase", 1)
+        ]
+
+    def test_the_clock_skips_past_the_kept_pick(self, client):
+        state = new_session(client, your_slot=6, keepers=[
+            {"team_slot": 6, "round": 1, "player_name": "Ja'Marr Chase"},
+        ])
+        # Round 1 was spent on the keeper, so you are next up in round 2.
+        assert state["on_the_clock"]["round"] == 2
+        assert state["on_the_clock"]["team_slot"] == 6
+
+    @pytest.mark.parametrize("slot", [1, 6, 12])
+    def test_it_works_on_any_slot(self, client, slot):
+        state = new_session(client, your_slot=slot, keepers=[
+            {"team_slot": slot, "round": 1, "player_name": "Bijan Robinson"},
+        ])
+        assert [r["player_name"] for r in state["your_roster"]] == ["Bijan Robinson"]
+
+    def test_a_blank_keeper_name_is_reported_not_swallowed(self, client):
+        state = new_session(client, your_slot=6, keepers=[
+            {"team_slot": 6, "round": 1, "player_name": "   "},
+        ])
+        # The UI blocks this, but if one arrives it must be visible, not silent.
+        assert state["unresolved_keepers"] == ["   "]

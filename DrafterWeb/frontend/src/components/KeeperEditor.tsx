@@ -164,8 +164,10 @@ function KeeperRow({
 /**
  * Typeahead against the full player pool.
  *
- * Names must match the rankings exactly, and the two sources disagree about
- * suffixes, so picking from a list beats typing and hoping.
+ * What you type is the value. An earlier version only reported a name when a
+ * suggestion was clicked, so typing one and pressing start silently dropped the
+ * keeper -- the field looked filled in and the draft ran without it. The list
+ * is a convenience for getting the spelling right, not the only way to answer.
  */
 function PlayerPicker({
   value,
@@ -174,21 +176,18 @@ function PlayerPicker({
   value: string;
   onChange: (name: string) => void;
 }) {
-  const [query, setQuery] = useState(value);
   const [results, setResults] = useState<Player[]>([]);
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
-  useEffect(() => setQuery(value), [value]);
-
   useEffect(() => {
-    if (!open || query.trim().length < 2) {
+    if (!open || value.trim().length < 2) {
       setResults([]);
       return;
     }
     let cancelled = false;
     const timer = setTimeout(() => {
-      fetch(`/api/players?search=${encodeURIComponent(query)}&limit=8`)
+      fetch(`/api/players?search=${encodeURIComponent(value)}&limit=8`)
         .then((r) => r.json())
         .then((d) => {
           if (!cancelled) setResults(d.players ?? []);
@@ -201,7 +200,7 @@ function PlayerPicker({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, open]);
+  }, [value, open]);
 
   useEffect(() => {
     function away(e: MouseEvent) {
@@ -211,20 +210,21 @@ function PlayerPicker({
     return () => document.removeEventListener("mousedown", away);
   }, []);
 
-  const unconfirmed = value.length > 0 && query !== value;
+  const empty = value.trim() === "";
 
   return (
     <div ref={box} className="relative min-w-52 flex-1">
       <input
-        value={query}
+        value={value}
         onChange={(e) => {
-          setQuery(e.target.value);
+          onChange(e.target.value);
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
         placeholder="Search for a player…"
+        aria-invalid={empty}
         className={`w-full rounded border bg-surface px-2 py-1 text-sm ${
-          unconfirmed ? "border-warn" : "border-rule"
+          empty ? "border-warn" : "border-rule"
         }`}
       />
 
@@ -236,7 +236,6 @@ function PlayerPicker({
                 type="button"
                 onMouseDown={() => {
                   onChange(p.name);
-                  setQuery(p.name);
                   setOpen(false);
                 }}
                 className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm hover:bg-raised"
