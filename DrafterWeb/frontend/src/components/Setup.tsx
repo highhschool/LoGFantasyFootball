@@ -68,7 +68,7 @@ export function Setup({
     }
   }
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
+    <div className="mx-auto flex h-full w-full max-w-3xl flex-col gap-6 overflow-y-auto p-6">
       <header className="flex flex-col gap-2">
         <button
           type="button"

@@ -33,7 +33,7 @@ export function BoardGrid({
   return (
     <section
       style={style}
-      className={`flex min-h-0 flex-col overflow-hidden rounded-lg border border-rule bg-surface ${className}`}
+      className={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-rule bg-surface ${className}`}
     >
       <header className="flex items-center gap-3 border-b border-rule px-3 py-2">
         <h2 className="text-xs font-semibold tracking-wider text-ink-3 uppercase">

@@ -12,7 +12,7 @@ export type Tool = "mock" | "live";
  */
 export function Home({ adp, onPick }: { adp?: AdpProvenance; onPick: (tool: Tool) => void }) {
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 p-6">
+    <div className="mx-auto flex h-full w-full max-w-3xl flex-col gap-8 overflow-y-auto p-6">
       <header>
         <h1 className="text-3xl font-semibold tracking-tight">NGFL Drafter</h1>
         <AdpBadge adp={adp} className="mt-2" />

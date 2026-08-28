@@ -52,6 +52,11 @@
 
 html {
   height: 100%;
+  /* Safari on iPhone inflates font sizes when a block is much wider than the
+     screen, and the draft board is twelve columns across. Without this the
+     whole app loads looking zoomed in. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 /* iOS Safari shrinks the viewport as its toolbar collapses, so a 100% or
@@ -69,7 +74,8 @@ body {
   overscroll-behavior-y: none;
 }
 
-/* Keep content clear of the notch and the home indicator. */
+/* #root clips, so every screen inside it has to own its own scrolling.
+   Anything that forgets is simply unreachable on a phone. */
 #root {
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);

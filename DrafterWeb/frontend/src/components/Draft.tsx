@@ -249,7 +249,7 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
         )}
 
         <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-          <div className="flex flex-col gap-3 lg:min-h-0">
+          <div className="flex min-w-0 flex-col gap-3 lg:min-h-0">
             {/* Narrow, the board earns its height as it fills: empty it is
                 mostly blank rows, so the list keeps the room early on. */}
             {showBoard && !wideBoard && (
@@ -278,7 +278,7 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
             />
           </div>
 
-          <div className="flex flex-col gap-3 lg:min-h-0 lg:overflow-y-auto">
+          <div className="flex min-w-0 flex-col gap-3 lg:min-h-0 lg:overflow-y-auto">
             <AdvicePanel
               advice={advice}
               loading={advising}
