@@ -224,6 +224,8 @@ export interface KeeperImport {
 export interface KeeperImportResult {
   /** True while selections can still change -- the caveat on an import. */
   open: boolean;
+  /** Whose league it came from. A mock draft has none of its own. */
+  league: string;
   managers: number;
   /** Managers who have not chosen yet. */
   waiting: string[];

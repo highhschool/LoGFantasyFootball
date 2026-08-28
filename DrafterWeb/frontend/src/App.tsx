@@ -188,6 +188,8 @@ export default function App() {
         starting={starting}
         error={error}
         adp={health?.adp}
+        profile={profile}
+        onSignedIn={() => me.get().then((r) => setProfile(r.you))}
         onStart={startMock}
         onResume={openMock}
         onRename={renameMock}

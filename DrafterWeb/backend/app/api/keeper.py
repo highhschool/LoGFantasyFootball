@@ -88,9 +88,12 @@ def require_open() -> None:
 
 
 def require_claim(store: SessionStore, owner: str) -> dict:
+    """The same wording everywhere: identity is no longer this tool's alone."""
     manager = store.claimed_manager(owner)
     if manager is None:
-        raise HTTPException(status_code=403, detail="claim your team first")
+        raise HTTPException(
+            status_code=403, detail="sign in with your manager code first"
+        )
     return manager
 
 
@@ -255,6 +258,7 @@ def unpick(
 @router.get("/import")
 def draft_import(
     store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
 ) -> dict:
     """The league's keepers as a mock draft's keeper list.
 
@@ -264,12 +268,23 @@ def draft_import(
     reported rather than dropped -- an import that silently lands eleven of
     twelve keepers is worse than one that says why.
 
-    Ungated, unlike the board. The selections are visible in Sleeper anyway,
-    so withholding them here bought no privacy and only stopped people from
-    doing the useful thing: running mock drafts against the real keepers
-    before the draft. They are provisional until the lock, which the caller
-    is told with `open` rather than by being refused.
+    Signing in is the gate, not the deadline. Those are different questions
+    and the earlier version confused them: a league member should be able to
+    mock against the real keepers whenever they like -- the selections are in
+    Sleeper anyway, so a time lock bought no privacy -- but this site is public,
+    and a stranger who has never heard of the league had no business pulling
+    twelve people's keepers out of it.
+
+    That also puts the league where it belongs. A mock draft has no inherent
+    knowledge of the NGFL; it asks whoever is running it, and the answer comes
+    from their account. Today one account means one league, which is why the
+    league id is still configuration -- but the seam is here rather than baked
+    into the mock draft tool.
+
+    Selections stay provisional until the lock, which the caller is told with
+    `open` rather than by being refused.
     """
+    manager = require_claim(store, owner)
     rows = store.all_keepers()
 
     keepers, waiting, unordered = [], [], []
@@ -294,6 +309,8 @@ def draft_import(
         # True while selections can still change, which is the caveat on
         # anything imported from here.
         "open": is_open(),
+        # Whose league this is. One account, one league, for now.
+        "league": manager["display_name"] or manager["team_name"],
         "managers": len(rows),
         "waiting": waiting,
         "unordered": unordered,

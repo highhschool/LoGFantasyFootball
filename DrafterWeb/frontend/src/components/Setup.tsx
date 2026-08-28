@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import type { AdpProvenance } from "../api";
-import type { KeeperDraft, NewSession, SessionSummary } from "../types";
+import type { KeeperDraft, NewSession, Profile, SessionSummary } from "../types";
 import { AdpBadge } from "./AdpBadge";
 import { InlineName } from "./InlineName";
 import { KeeperEditor } from "./KeeperEditor";
@@ -18,6 +18,9 @@ interface Props {
   starting: boolean;
   error: string | null;
   adp?: AdpProvenance;
+  /** Who is running this, which is where a real league comes from. */
+  profile: Profile | null;
+  onSignedIn: () => void;
   onStart: (body: NewSession) => void;
   onResume: (id: string) => void;
   onRename: (id: string, name: string) => void;
@@ -30,6 +33,8 @@ export function Setup({
   starting,
   error,
   adp,
+  profile,
+  onSignedIn,
   onStart,
   onResume,
   onRename,
@@ -215,7 +220,9 @@ export function Setup({
         teams={teams}
         rounds={rounds}
         keepers={keepers}
+        profile={profile}
         onChange={setKeepers}
+        onSignedIn={onSignedIn}
       />
 
       {sessions.length > 0 && (

@@ -548,9 +548,7 @@ class TestImportingIntoAMockDraft:
     def test_it_pairs_the_slot_with_the_round(self, app, synced):
         with TestClient(app) as c:
             picked = self._chosen(c, synced["u1"])
-
-        with TestClient(app) as anyone:
-            data = anyone.get("/api/keeper/import").json()
+            data = c.get("/api/keeper/import").json()
 
         assert len(data["keepers"]) == 1
         entry = data["keepers"][0]
@@ -563,9 +561,7 @@ class TestImportingIntoAMockDraft:
         """An import that lands eleven of twelve has to say which one is missing."""
         with TestClient(app) as c:
             self._chosen(c, synced["u1"])
-
-        with TestClient(app) as owner:
-            data = owner.get("/api/keeper/import", headers=ADMIN).json()
+            data = c.get("/api/keeper/import").json()
 
         assert data["waiting"] == ["jed"]
         assert data["managers"] == 2
@@ -574,31 +570,44 @@ class TestImportingIntoAMockDraft:
         with TestClient(app) as a, TestClient(app) as b:
             self._chosen(a, synced["u1"])
             self._chosen(b, synced["u2"])
-
-        with TestClient(app) as owner:
-            keepers = owner.get("/api/keeper/import", headers=ADMIN).json()["keepers"]
+            keepers = b.get("/api/keeper/import").json()["keepers"]
 
         assert [k["team_slot"] for k in keepers] == [1, 2]
 
-    def test_anyone_may_import_before_the_lock(self, app, synced):
-        """Ungated on purpose: the selections are visible in Sleeper anyway.
+    def test_a_league_member_may_import_before_the_lock(self, app, synced):
+        """Signing in is the gate, not the deadline.
 
-        Withholding them here bought no privacy and only stopped the useful
-        thing -- mocking against the real keepers while there is still time
-        for the result to matter.
+        A member should be able to mock against the real keepers whenever they
+        like -- the selections are in Sleeper anyway, so a time lock bought no
+        privacy.
         """
+        with TestClient(app) as c:
+            self._chosen(c, synced["u1"])
+            data = c.get("/api/keeper/import").json()
+
+        assert len(data["keepers"]) == 1
+
+    def test_a_stranger_may_not_import_the_league(self, app, synced):
+        """The site is public. Twelve people's keepers are not."""
         with TestClient(app) as c:
             self._chosen(c, synced["u1"])
 
         with TestClient(app) as anyone:
-            data = anyone.get("/api/keeper/import").json()
+            r = anyone.get("/api/keeper/import")
 
-        assert len(data["keepers"]) == 1
+        assert r.status_code == 403
+
+    def test_the_import_names_whose_league_it_is(self, app, synced):
+        """A mock draft has no league of its own; it gets one from the account."""
+        with TestClient(app) as c:
+            claim(c, synced["u1"])
+            assert c.get("/api/keeper/import").json()["league"] == "brayden"
 
     def test_it_says_the_keepers_can_still_change(self, app, synced):
         """The caveat on importing early, and the only thing `open` is for."""
-        with TestClient(app) as anyone:
-            assert anyone.get("/api/keeper/import").json()["open"] is True
+        with TestClient(app) as c:
+            claim(c, synced["u1"])
+            assert c.get("/api/keeper/import").json()["open"] is True
 
     def test_after_the_lock_it_says_they_cannot(self, app, synced, monkeypatch):
         with TestClient(app) as c:
@@ -608,8 +617,9 @@ class TestImportingIntoAMockDraft:
             app_config, "KEEPER_DEADLINE",
             datetime.now(timezone.utc) - timedelta(minutes=1),
         )
-        with TestClient(app) as anyone:
-            data = anyone.get("/api/keeper/import").json()
+        with TestClient(app) as c:
+            claim(c, synced["u2"])
+            data = c.get("/api/keeper/import").json()
 
         assert data["open"] is False
         assert len(data["keepers"]) == 1
@@ -638,7 +648,9 @@ class TestImportingIntoAMockDraft:
         )
         with TestClient(app) as owner:
             owner.post("/api/admin/keepers/sync", headers=ADMIN)
-            data = owner.get("/api/keeper/import", headers=ADMIN).json()
+        with TestClient(app) as c:
+            claim(c, synced["u2"])
+            data = c.get("/api/keeper/import").json()
 
         assert data["keepers"] == []
         assert data["unordered"] == ["brayden"]

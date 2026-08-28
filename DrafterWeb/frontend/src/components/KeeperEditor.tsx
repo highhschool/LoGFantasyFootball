@@ -1,24 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, keeper as keeperApi } from "../api";
-import type { KeeperDraft, Player } from "../types";
+import type { KeeperDraft, Player, Profile } from "../types";
 import { PositionBadge } from "./PositionBadge";
+import { SignIn } from "./SignIn";
 
 interface Props {
   teams: number;
   rounds: number;
   keepers: KeeperDraft[];
+  /** A mock draft has no league of its own; it gets one from the account. */
+  profile: Profile | null;
   onChange: (keepers: KeeperDraft[]) => void;
+  onSignedIn: () => void;
 }
 
 /**
  * Optional throughout. An empty list is a plain snake draft, so this stays
  * collapsed until asked for and never blocks starting a draft.
  */
-export function KeeperEditor({ teams, rounds, keepers, onChange }: Props) {
+export function KeeperEditor({ teams, rounds, keepers, profile, onChange, onSignedIn }: Props) {
   const [open, setOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [askSignIn, setAskSignIn] = useState(false);
 
   /**
    * Pull the league's real keepers in, slot and round together.
@@ -31,8 +36,15 @@ export function KeeperEditor({ teams, rounds, keepers, onChange }: Props) {
    * Available before the lock, because the point is to mock against the real
    * keepers while there is still time for it to matter. They are provisional
    * until then, which the note says.
+   *
+   * Needs an account. The mock draft does not know about any league; it asks
+   * whoever is running it, and the answer arrives with their sign-in.
    */
   async function importLeague() {
+    if (!profile) {
+      setAskSignIn(true);
+      return;
+    }
     setImporting(true);
     setNote(null);
     setProblem(null);
@@ -57,8 +69,9 @@ export function KeeperEditor({ teams, rounds, keepers, onChange }: Props) {
           `${data.keepers.length - fits.length} outside a ${teams}-team, ${rounds}-round draft`,
       ].filter(Boolean);
 
+      setAskSignIn(false);
       setNote(
-        `Imported ${fits.length} of ${data.managers}` +
+        `Imported ${fits.length} of ${data.managers} in ${data.league}'s league` +
           (asides.length ? ` — ${asides.join("; ")}.` : ".") +
           // Worth saying every time: a mock run today can be built on a
           // keeper somebody swaps out on Sunday afternoon.
@@ -139,6 +152,19 @@ export function KeeperEditor({ teams, rounds, keepers, onChange }: Props) {
           </button>
         </div>
       </div>
+
+      {askSignIn && !profile && (
+        <div className="mt-4 rounded-md border border-rule bg-ground p-4">
+          <SignIn
+            heading="Sign in to import your league"
+            blurb="Keepers come from your league, so the app needs to know whose you are."
+            onSignedIn={() => {
+              setAskSignIn(false);
+              onSignedIn();
+            }}
+          />
+        </div>
+      )}
 
       {note && <p className="mt-3 text-sm text-ink-2">{note}</p>}
       {problem && <p className="mt-3 text-sm text-danger">{problem}</p>}
