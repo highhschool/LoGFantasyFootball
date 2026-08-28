@@ -128,11 +128,15 @@ export interface Advice {
   survival: number;
   /** Picks he has fallen past his ADP; negative is a reach. */
   value: number;
-  tier: number;
-  tier_remaining: number;
   need: number;
   bye_clash: boolean;
   gone_by_next: boolean;
+  /** ADP picks lost by waiting a turn at this position. */
+  dropoff: number;
+  /** Who you would likely be choosing from instead. */
+  alternative: string;
+  alternative_adp: number;
+  tier_remaining: number;
   reasons: string[];
 }
 

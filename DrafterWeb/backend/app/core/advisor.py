@@ -28,16 +28,29 @@ MIN_TIER_GAP = 4.0
 
 # How the factors combine. Deliberately few, and named, because the score is a
 # judgement call and these are the places to argue with it.
-WEIGHT_VALUE = 1.0      # has fallen past his ADP
+WEIGHT_DROPOFF = 1.0    # what you lose by waiting a turn at this position
+WEIGHT_VALUE = 0.6      # has fallen past his own ADP
+BYE_PENALTY = 2.0       # would put a third starter on one bye week
+
 # Beyond this, being early or late stops telling you anything new. Without it,
 # at pick 1 every deep player scores as hundreds of picks of "value", and a
 # round-15 receiver outranks the first name on the board.
 VALUE_CAP = 25.0
-WEIGHT_URGENCY = 2.5    # unlikely to survive, and you still need the position
-WEIGHT_TIER = 1.5       # last of his tier
-BYE_PENALTY = 2.0       # would put a third starter on one bye week
 
 _NORMAL = NormalDist()
+
+
+@dataclass(frozen=True, slots=True)
+class Outlook:
+    """What one position looks like now, and what it will look like next turn."""
+
+    position: str
+    best_now: Player
+    likely_later: Player
+    dropoff: float          # ADP picks between the two
+    expected_gone: float    # how many at this position go before your next pick
+    remaining: int
+    tier_remaining: int     # players left in the best remaining tier
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,11 +59,13 @@ class Advice:
     score: float
     survival: float          # chance he is still there at your next pick
     value: float             # picks he has fallen past his ADP; negative is a reach
-    tier: int                # 1 is the best remaining tier at his position
-    tier_remaining: int      # players left in his tier
     need: int                # roster spots you still have at his position
     bye_clash: bool
-    gone_by_next: bool       # will not survive to your next pick
+    gone_by_next: bool
+    dropoff: float           # ADP cost of waiting a turn at this position
+    alternative: str         # who you would likely be choosing from instead
+    alternative_adp: float
+    tier_remaining: int      # players left in this tier at his position
     reasons: list[str]
 
     def as_dict(self) -> dict:
@@ -64,11 +79,13 @@ class Advice:
             "score": round(self.score, 2),
             "survival": round(self.survival, 3),
             "value": round(self.value, 1),
-            "tier": self.tier,
-            "tier_remaining": self.tier_remaining,
             "need": self.need,
             "bye_clash": self.bye_clash,
             "gone_by_next": self.gone_by_next,
+            "dropoff": round(self.dropoff, 1),
+            "alternative": self.alternative,
+            "alternative_adp": round(self.alternative_adp, 1),
+            "tier_remaining": self.tier_remaining,
             "reasons": self.reasons,
         }
 
@@ -100,81 +117,106 @@ def survival_probability(player: Player, now: int, until: int | None) -> float:
     return max(0.0, min(1.0, lasts / still_here))
 
 
-def tiers(players: list[Player], teams: int) -> dict[str, tuple[int, int]]:
-    """Tier number and players remaining in that tier, per player key.
+def tier_size(ordered: list[Player], teams: int) -> int:
+    """How many players sit in the best remaining tier at a position.
 
-    A tier ends where the ADP gap to the next player at the same position is
-    wide enough that waiting means a real drop rather than a near-equal
-    alternative.
+    A tier ends where the ADP gap to the next man is wide enough that waiting
+    means a real drop rather than a near-equal alternative. Counted from the
+    top of what is left, so it measures the tier's scarcity rather than any one
+    player's place in it -- being *last* in a tier is not a reason to prefer
+    him over the man above him.
     """
     threshold = max(MIN_TIER_GAP, TIER_GAP_FRACTION * teams)
-    result: dict[str, tuple[int, int]] = {}
 
-    by_position: dict[str, list[Player]] = {}
-    for player in players:
-        by_position.setdefault(player.position, []).append(player)
+    for i in range(len(ordered) - 1):
+        if ordered[i + 1].adp - ordered[i].adp >= threshold:
+            return i + 1
+    return len(ordered)
 
-    for group in by_position.values():
-        ordered = sorted(group, key=lambda p: p.adp)
 
-        # Split into runs wherever the gap is wide.
-        runs: list[list[Player]] = [[]]
-        for i, player in enumerate(ordered):
-            runs[-1].append(player)
-            if i + 1 < len(ordered) and ordered[i + 1].adp - player.adp >= threshold:
-                runs.append([])
+def outlook(players: list[Player], now: int, until: int | None, teams: int) -> Outlook | None:
+    """What waiting a turn costs at one position.
 
-        for tier_number, run in enumerate(runs, start=1):
-            for index, player in enumerate(run):
-                result[player.key] = (tier_number, len(run) - index)
+    The decisive question at any pick is not who is best on the board, but what
+    is lost by taking someone else first. Summing each player's chance of being
+    gone gives the expected number taken at this position before your next
+    turn; the man that far down the list is who you would likely be choosing
+    from instead.
+    """
+    if not players:
+        return None
 
-    return result
+    ordered = sorted(players, key=lambda p: p.adp)
+    best_now = ordered[0]
+
+    expected_gone = sum(1.0 - survival_probability(p, now, until) for p in ordered)
+    index_later = min(len(ordered) - 1, int(round(expected_gone)))
+    likely_later = ordered[index_later]
+
+    return Outlook(
+        position=best_now.position,
+        best_now=best_now,
+        likely_later=likely_later,
+        dropoff=max(0.0, likely_later.adp - best_now.adp),
+        expected_gone=expected_gone,
+        remaining=len(ordered),
+        tier_remaining=tier_size(ordered, teams),
+    )
+
+
+def _article(number: float) -> str:
+    """"an 8-pick drop", but "a 14-pick drop"."""
+    spoken = f"{number:.0f}"
+    return "an" if spoken[0] == "8" or spoken in {"11", "18"} else "a"
 
 
 def _reasons(
     player: Player,
+    view: Outlook,
     survival: float,
     value: float,
-    tier: int,
-    tier_remaining: int,
     need: int,
     bye_clash: bool,
+    until: int | None,
 ) -> list[str]:
-    """Plain statements of what drove the score, strongest first."""
+    """What actually bears on this pick, most decisive first."""
     said: list[str] = []
+    position = player.position
+    holds_up = view.dropoff < 3 or view.likely_later.key == player.key
 
-    # Survival is only worth stating when it would change the decision. The
-    # reported ADP spread is tight -- two to five picks through the early
-    # rounds -- so nearly everyone at the top of the board is gone before your
-    # next turn, and saying so on every row explains nothing. The actionable
-    # half is the opposite: who you can afford to wait on.
-    if survival >= 0.4:
-        said.append(f"should still be there next turn ({survival:.0%}) — you can wait")
+    if until is None:
+        said.append(f"your last pick, and the best {position} left")
+    elif holds_up:
+        # Naming the same player as the alternative reads as a riddle; the
+        # point is simply that this position keeps.
+        said.append(f"{position} keeps — the board here should look much the same next turn")
+    else:
+        said.append(
+            f"wait a turn and you are likely choosing from {view.likely_later.name} "
+            f"({position}{view.likely_later.pos_rank}) instead — "
+            f"{_article(view.dropoff)} {view.dropoff:.0f}-pick drop"
+        )
 
-    if value >= 6:
-        said.append(f"available {value:.0f} picks past his ADP")
+    # Tier scarcity only reinforces urgency. When nobody is taking this
+    # position anyway, "only 1 left before the next tier" contradicts the line
+    # above rather than adding to it.
+    if not holds_up and view.tier_remaining <= 3 and view.remaining > view.tier_remaining:
+        said.append(
+            f"only {view.tier_remaining} {position}"
+            f"{'' if view.tier_remaining == 1 else 's'} left at this level"
+        )
 
-    if tier_remaining == 1:
-        said.append(f"last {player.position} in tier {tier}")
-    elif tier_remaining <= 3:
-        said.append(f"{tier_remaining} left in tier {tier}")
+    if value >= 5:
+        said.append(f"fallen {value:.0f} picks past his own ADP")
 
     if need == 1:
-        said.append(f"your last {player.position} spot")
+        said.append(f"your last {position} spot")
+
+    if survival >= 0.5 and not holds_up:
+        said.append(f"he is {survival:.0%} to still be there himself")
 
     if bye_clash and player.bye_week is not None:
         said.append(f"would be a third starter on the week {player.bye_week} bye")
-
-    # Early on, nothing above fires: tiers are still full, nobody has fallen,
-    # and everyone is gone by your next pick. A score with no stated reason is
-    # the black box this module exists to avoid, so say where he actually sits.
-    if not said:
-        if value >= 3:
-            said.append(f"{value:.0f} picks past his ADP of {player.adp:.0f}")
-        elif value <= -3:
-            said.append(f"a {abs(value):.0f}-pick reach on his ADP of {player.adp:.0f}")
-        else:
-            said.append(f"the consensus pick here (ADP {player.adp:.0f})")
 
     return said
 
@@ -183,9 +225,16 @@ def recommend(
     state: DraftState,
     pool: PlayerPool,
     slot: int | None = None,
-    limit: int = 10,
+    limit: int = 8,
 ) -> list[Advice]:
-    """Rank the players worth taking at this pick, best first."""
+    """The best player at each position you can still use, ranked by urgency.
+
+    One entry per position on purpose. Five names from two positions is two
+    decisions dressed as five, and the near-identical members of a tier crowd
+    out the choice that actually matters -- which position to spend this pick
+    on. Within a position the best available is always the answer, so that is
+    the one offered.
+    """
     cell = state.current
     if cell is None:
         return []
@@ -198,39 +247,34 @@ def recommend(
     if not eligible:
         return []
 
-    tier_of = tiers(eligible, state.config.teams)
     needs = state.team(slot).needs(state.config.position_limits)
     spots_left = max(1, sum(max(0, n) for n in needs.values()))
     byes = state.team(slot).bye_weeks
 
-    advice: list[Advice] = []
+    by_position: dict[str, list[Player]] = {}
     for player in eligible:
-        need = max(0, needs.get(player.position, 0))
-        if need == 0:
+        if needs.get(player.position, 0) > 0:
+            by_position.setdefault(player.position, []).append(player)
+
+    advice: list[Advice] = []
+    for position, players in by_position.items():
+        view = outlook(players, now, until, state.config.teams)
+        if view is None:
             continue
 
+        player = view.best_now
+        need = max(0, needs.get(position, 0))
         survival = survival_probability(player, now, until)
-        # Positive when the board has moved past his ADP: he has fallen, and
-        # is a bargain here. Negative means taking him now is a reach.
         value = now - player.adp
-        tier, tier_remaining = tier_of.get(player.key, (1, 1))
+        bye_clash = player.bye_week is not None and byes.count(player.bye_week) >= 2
 
-        # Third starter sharing a bye is the point it starts to hurt.
-        bye_clash = (
-            player.bye_week is not None
-            and byes.count(player.bye_week) >= 2
-        )
-
-        # Scarcity only matters for a position you can still use, so need
-        # scales urgency rather than adding to it separately.
+        # Urgency is what waiting costs here, weighted by how much of your
+        # remaining roster this position still has to fill. A steep drop at a
+        # position you have already filled is not your problem.
         need_share = need / spots_left
-        urgency = (1.0 - survival) * need_share
-        tier_pressure = (1.0 / tier_remaining) * need_share
-
         score = (
-            WEIGHT_VALUE * (max(-VALUE_CAP, min(VALUE_CAP, value)) / 10.0)
-            + WEIGHT_URGENCY * urgency
-            + WEIGHT_TIER * tier_pressure
+            WEIGHT_DROPOFF * (view.dropoff / 10.0) * (0.5 + need_share)
+            + WEIGHT_VALUE * (max(-VALUE_CAP, min(VALUE_CAP, value)) / 10.0)
             - (BYE_PENALTY if bye_clash else 0.0)
         )
 
@@ -240,17 +284,23 @@ def recommend(
                 score=score,
                 survival=survival,
                 value=value,
-                tier=tier,
-                tier_remaining=tier_remaining,
                 need=need,
                 bye_clash=bye_clash,
                 gone_by_next=survival < 0.25,
-                reasons=_reasons(
-                    player, survival, value, tier, tier_remaining, need, bye_clash
-                ),
+                dropoff=view.dropoff,
+                alternative=view.likely_later.name,
+                alternative_adp=view.likely_later.adp,
+                tier_remaining=view.tier_remaining,
+                reasons=_reasons(player, view, survival, value, need, bye_clash, until),
             )
         )
 
-    # ADP breaks ties, so equal scores fall back to consensus order.
+    # ADP breaks ties, so equal urgency falls back to consensus order.
     advice.sort(key=lambda a: (-a.score, a.player.adp))
-    return advice[:limit]
+
+    # A position where waiting costs nothing is not a decision. Suggesting a
+    # kicker in round 1 because he is the best kicker left is noise; these
+    # surface on their own once the board starts to thin. At least three
+    # options are always offered so the panel never collapses to one.
+    pressing = [a for a in advice if a.dropoff >= 1.0]
+    return (pressing if len(pressing) >= 3 else advice[:3])[:limit]

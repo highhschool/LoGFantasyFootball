@@ -54,8 +54,8 @@ export function AdvicePanel({ advice, loading, onDraft, canDraft, yourTurn }: Pr
                   ))}
                 </ul>
 
-                <div className="flex items-center gap-2">
-                  <Availability advice={a} />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Pressure advice={a} />
                   <span className="tnum text-[11px] text-ink-3">
                     ADP {a.adp.toFixed(1)}
                   </span>
@@ -81,23 +81,30 @@ export function AdvicePanel({ advice, loading, onDraft, canDraft, yourTurn }: Pr
 }
 
 /**
- * Whether he will still be there next turn.
+ * What waiting a turn costs at this position.
  *
- * The reported ADP spread is tight, so most of the board is gone by your next
- * pick and saying so every time explains nothing. It earns a chip rather than
- * a sentence, and only the ones you can wait on get the accent.
+ * The decisive fact is not whether this player survives -- with the ADP spread
+ * as tight as it is, almost nobody does -- but how far the position falls
+ * before you pick again. A position that keeps is the one to skip.
  */
-function Availability({ advice }: { advice: Advice }) {
-  if (advice.gone_by_next) {
+function Pressure({ advice }: { advice: Advice }) {
+  if (advice.dropoff < 3) {
     return (
-      <span className="rounded bg-raised px-1.5 py-0.5 text-[11px] text-ink-3">
-        gone by your next pick
+      <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent">
+        holds up
       </span>
     );
   }
+
+  const steep = advice.dropoff >= 12;
   return (
-    <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent">
-      {Math.round(advice.survival * 100)}% to last
+    <span
+      className={`tnum rounded px-1.5 py-0.5 text-[11px] font-medium ${
+        steep ? "bg-warn-soft text-warn" : "bg-raised text-ink-2"
+      }`}
+      title={`Wait a turn and the best ${advice.position} left is likely ${advice.alternative} (ADP ${advice.alternative_adp.toFixed(1)})`}
+    >
+      −{Math.round(advice.dropoff)} picks if you wait
     </span>
   );
 }
