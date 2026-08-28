@@ -6,7 +6,7 @@ for the architecture and phase plan.
 **Status: P1 complete.** The mock draft sandbox is playable: pick against eleven
 bots with an optional pick clock, set keepers, undo, autopick, or simulate the
 rest. ADP comes live from the public feed, so the app is self-contained.
-189 backend tests pass.
+209 backend tests pass.
 
 **Next: P2, the live draft assistant.** See the handoff at the end of
 [PLAN.md](PLAN.md).
@@ -220,6 +220,17 @@ What that does and does not mean:
 - So the goal is not secrecy but **discoverability**: the app should never hand a
   visitor the league ID or manager names, because that is the one thing that
   turns "public in principle" into "trivially findable".
+
+**Draft sessions are owned.** An opaque, httpOnly cookie is issued on first
+visit, and every session route is scoped to it: you see only your own drafts,
+and someone else's returns 404 rather than 403 so ids cannot be probed for.
+This is *ownership, not authorization* -- it stops a friend deleting your mock
+draft, not a determined person, which is the right trade for a public site with
+nothing sensitive behind it. Clearing cookies loses your drafts, by design.
+
+If Cloudflare Access is ever enabled, `Cf-Access-Authenticated-User-Email`
+replaces the cookie automatically and the same check becomes genuinely
+enforceable, with no migration.
 
 **P2 design rule:** `SLEEPER_LEAGUE_ID` stays server-side in `.env`. The backend
 proxies Sleeper and returns only what the board needs. No response ever contains

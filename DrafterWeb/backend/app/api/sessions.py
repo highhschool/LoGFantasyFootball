@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import random
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from .. import config as app_config
@@ -17,6 +17,7 @@ from ..core.engine import DraftError, DraftState, LoggedPick, append_pick, repla
 from ..core.models import ConfigError, DraftConfig, Keeper
 from ..core.order import picks_until_next
 from ..core.rankings import PlayerPool
+from ..owner import resolve as resolve_owner
 from ..store import SessionStore
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -67,6 +68,10 @@ def get_store() -> SessionStore:
     from ..main import get_session_store
 
     return get_session_store()
+
+
+def get_owner(request: Request, response: Response) -> str:
+    return resolve_owner(request, response)
 
 
 # ---------------------------------------------------------------- rendering
@@ -167,8 +172,13 @@ def _check_pool_depth(pool: PlayerPool, draft: DraftConfig) -> None:
             )
 
 
-def _load_or_404(store: SessionStore, session_id: str) -> dict:
-    session = store.load(session_id)
+def _load_or_404(store: SessionStore, session_id: str, owner: str) -> dict:
+    """404, not 403, for a session you do not own.
+
+    Distinguishing "not yours" from "does not exist" would let anyone probe for
+    other people's draft ids, and buys nothing: either way you cannot open it.
+    """
+    session = store.load(session_id, owner)
     if session is None:
         raise HTTPException(status_code=404, detail="no such session")
     return session
@@ -181,6 +191,7 @@ def create_session(
     body: SessionIn,
     pool: PlayerPool = Depends(get_pool),
     store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
 ) -> dict:
     limits = body.position_limits or dict(DraftConfig(year=app_config.SEASON).position_limits)
     draft = DraftConfig(
@@ -204,8 +215,9 @@ def create_session(
     session_id = store.create(
         draft, seed=seed, name=body.name, mode="mock",
         randomness=body.randomness, pick_seconds=body.pick_seconds,
+        owner_id=owner,
     )
-    session = _load_or_404(store, session_id)
+    session = _load_or_404(store, session_id, owner)
 
     # Run the bots picking ahead of the user's first pick. A pool too thin for
     # this league size runs dry here, and must read as a rejected config rather
@@ -213,16 +225,19 @@ def create_session(
     try:
         log = _run_bots(session, pool, [])
     except DraftError as exc:
-        store.delete(session_id)
+        store.delete(session_id, owner)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    store.save_log(session_id, log)
+    store.save_log(session_id, log, owner)
 
     return _serialize(session, replay(draft, pool, log), pool)
 
 
 @router.get("")
-def list_sessions(store: SessionStore = Depends(get_store)) -> dict:
-    return {"sessions": store.list()}
+def list_sessions(
+    store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
+) -> dict:
+    return {"sessions": store.list(owner)}
 
 
 @router.get("/{session_id}")
@@ -230,8 +245,9 @@ def get_session(
     session_id: str,
     pool: PlayerPool = Depends(get_pool),
     store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
 ) -> dict:
-    session = _load_or_404(store, session_id)
+    session = _load_or_404(store, session_id, owner)
     state = replay(session["config"], pool, session["log"])
     return _serialize(session, state, pool)
 
@@ -242,6 +258,7 @@ def update_session(
     body: SessionPatch,
     pool: PlayerPool = Depends(get_pool),
     store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
 ) -> dict:
     """Rename a session, or change its pick clock, mid-draft.
 
@@ -249,14 +266,14 @@ def update_session(
     board means, so altering them after picks exist would invalidate the log.
     Those stay fixed at creation.
     """
-    _load_or_404(store, session_id)
+    _load_or_404(store, session_id, owner)
 
     if body.name is not None:
-        store.rename(session_id, body.name.strip())
+        store.rename(session_id, body.name.strip(), owner)
     if body.pick_seconds is not None:
-        store.set_pick_seconds(session_id, body.pick_seconds)
+        store.set_pick_seconds(session_id, body.pick_seconds, owner)
 
-    session = _load_or_404(store, session_id)
+    session = _load_or_404(store, session_id, owner)
     return _serialize(session, replay(session["config"], pool, session["log"]), pool)
 
 
@@ -268,8 +285,9 @@ def available_players(
     limit: int = Query(500, ge=1, le=2000),
     pool: PlayerPool = Depends(get_pool),
     store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
 ) -> dict:
-    session = _load_or_404(store, session_id)
+    session = _load_or_404(store, session_id, owner)
     state = replay(session["config"], pool, session["log"])
 
     slot = state.config.your_slot
@@ -301,8 +319,9 @@ def make_pick(
     body: PickIn,
     pool: PlayerPool = Depends(get_pool),
     store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
 ) -> dict:
-    session = _load_or_404(store, session_id)
+    session = _load_or_404(store, session_id, owner)
 
     try:
         log = append_pick(session["config"], pool, session["log"], body.player_key, "user")
@@ -310,7 +329,7 @@ def make_pick(
     except DraftError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    store.save_log(session_id, log)
+    store.save_log(session_id, log, owner)
     return _serialize(session, replay(session["config"], pool, log), pool)
 
 
@@ -319,8 +338,9 @@ def undo_pick(
     session_id: str,
     pool: PlayerPool = Depends(get_pool),
     store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
 ) -> dict:
-    session = _load_or_404(store, session_id)
+    session = _load_or_404(store, session_id, owner)
     log = session["log"]
 
     if not log:
@@ -334,7 +354,7 @@ def undo_pick(
         log = undo(log)
 
     log = _run_bots(session, pool, log)
-    store.save_log(session_id, log)
+    store.save_log(session_id, log, owner)
     return _serialize(session, replay(session["config"], pool, log), pool)
 
 
@@ -343,9 +363,10 @@ def autopick(
     session_id: str,
     pool: PlayerPool = Depends(get_pool),
     store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
 ) -> dict:
     """Let the bot logic take this pick for the user."""
-    session = _load_or_404(store, session_id)
+    session = _load_or_404(store, session_id, owner)
     state = replay(session["config"], pool, session["log"])
 
     if state.complete:
@@ -359,7 +380,7 @@ def autopick(
 
     log = session["log"] + [LoggedPick(player_key=choice.key, source="user")]
     log = _run_bots(session, pool, log)
-    store.save_log(session_id, log)
+    store.save_log(session_id, log, owner)
     return _serialize(session, replay(session["config"], pool, log), pool)
 
 
@@ -368,9 +389,10 @@ def simulate_to_end(
     session_id: str,
     pool: PlayerPool = Depends(get_pool),
     store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
 ) -> dict:
     """Autopick the user's remaining picks and run the draft out."""
-    session = _load_or_404(store, session_id)
+    session = _load_or_404(store, session_id, owner)
     log = session["log"]
 
     state = replay(session["config"], pool, log)
@@ -384,12 +406,16 @@ def simulate_to_end(
         log = log + [LoggedPick(player_key=choice.key, source=source)]
         state = replay(session["config"], pool, log)
 
-    store.save_log(session_id, log)
+    store.save_log(session_id, log, owner)
     return _serialize(session, state, pool)
 
 
 @router.delete("/{session_id}")
-def delete_session(session_id: str, store: SessionStore = Depends(get_store)) -> dict:
-    if not store.delete(session_id):
+def delete_session(
+    session_id: str,
+    store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
+) -> dict:
+    if not store.delete(session_id, owner):
         raise HTTPException(status_code=404, detail="no such session")
     return {"deleted": session_id}

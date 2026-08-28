@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     name        TEXT NOT NULL DEFAULT '',
     mode        TEXT NOT NULL DEFAULT 'mock',
     seed        INTEGER NOT NULL,
+    owner_id    TEXT NOT NULL DEFAULT '',
     randomness  REAL NOT NULL DEFAULT 1.0,
     pick_seconds INTEGER NOT NULL DEFAULT 0,
     config_json TEXT NOT NULL,
@@ -61,6 +62,7 @@ def log_from_json(raw: str) -> list[LoggedPick]:
 # columns added after a database was first created need adding explicitly.
 # Existing sessions keep working rather than erroring on a missing column.
 ADDED_COLUMNS = {
+    "owner_id": "TEXT NOT NULL DEFAULT ''",
     "randomness": "REAL NOT NULL DEFAULT 1.0",
     "pick_seconds": "INTEGER NOT NULL DEFAULT 0",
 }
@@ -95,23 +97,26 @@ class SessionStore:
         mode: str = "mock",
         randomness: float = 1.0,
         pick_seconds: int = 0,
+        owner_id: str = "",
     ) -> str:
         session_id = uuid.uuid4().hex[:12]
         stamp = _now()
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO sessions (id, name, mode, seed, randomness, pick_seconds,"
-                " config_json, log_json, created_at, updated_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (session_id, name, mode, seed, randomness, pick_seconds,
+                "INSERT INTO sessions (id, name, mode, seed, owner_id, randomness,"
+                " pick_seconds, config_json, log_json, created_at, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (session_id, name, mode, seed, owner_id, randomness, pick_seconds,
                  config_to_json(config), "[]", stamp, stamp),
             )
         return session_id
 
-    def load(self, session_id: str) -> dict | None:
+    def load(self, session_id: str, owner_id: str) -> dict | None:
+        """Scoped to the owner: someone else's session reads as absent."""
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM sessions WHERE id = ?", (session_id,)
+                "SELECT * FROM sessions WHERE id = ? AND owner_id = ?",
+                (session_id, owner_id),
             ).fetchone()
         if row is None:
             return None
@@ -120,6 +125,7 @@ class SessionStore:
             "name": row["name"],
             "mode": row["mode"],
             "seed": row["seed"],
+            "owner_id": row["owner_id"],
             "randomness": row["randomness"],
             "pick_seconds": row["pick_seconds"],
             "config": config_from_json(row["config_json"]),
@@ -128,35 +134,40 @@ class SessionStore:
             "updated_at": row["updated_at"],
         }
 
-    def save_log(self, session_id: str, log: list[LoggedPick]) -> None:
+    def save_log(self, session_id: str, log: list[LoggedPick], owner_id: str) -> None:
         with self._connect() as conn:
             conn.execute(
-                "UPDATE sessions SET log_json = ?, updated_at = ? WHERE id = ?",
-                (log_to_json(log), _now(), session_id),
+                "UPDATE sessions SET log_json = ?, updated_at = ?"
+                " WHERE id = ? AND owner_id = ?",
+                (log_to_json(log), _now(), session_id, owner_id),
             )
 
-    def rename(self, session_id: str, name: str) -> bool:
+    def rename(self, session_id: str, name: str, owner_id: str) -> bool:
         with self._connect() as conn:
             cur = conn.execute(
-                "UPDATE sessions SET name = ?, updated_at = ? WHERE id = ?",
-                (name, _now(), session_id),
+                "UPDATE sessions SET name = ?, updated_at = ?"
+                " WHERE id = ? AND owner_id = ?",
+                (name, _now(), session_id, owner_id),
             )
             return cur.rowcount > 0
 
-    def set_pick_seconds(self, session_id: str, seconds: int) -> bool:
+    def set_pick_seconds(self, session_id: str, seconds: int, owner_id: str) -> bool:
         with self._connect() as conn:
             cur = conn.execute(
-                "UPDATE sessions SET pick_seconds = ?, updated_at = ? WHERE id = ?",
-                (seconds, _now(), session_id),
+                "UPDATE sessions SET pick_seconds = ?, updated_at = ?"
+                " WHERE id = ? AND owner_id = ?",
+                (seconds, _now(), session_id, owner_id),
             )
             return cur.rowcount > 0
 
-    def list(self, limit: int = 25) -> list[dict]:
+    def list(self, owner_id: str, limit: int = 25) -> list[dict]:
+        """Only your own drafts. Other people's are not listed at all."""
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT id, name, mode, created_at, updated_at, log_json"
-                " FROM sessions ORDER BY updated_at DESC LIMIT ?",
-                (limit,),
+                " FROM sessions WHERE owner_id = ?"
+                " ORDER BY updated_at DESC LIMIT ?",
+                (owner_id, limit),
             ).fetchall()
         return [
             {
@@ -170,7 +181,10 @@ class SessionStore:
             for r in rows
         ]
 
-    def delete(self, session_id: str) -> bool:
+    def delete(self, session_id: str, owner_id: str) -> bool:
         with self._connect() as conn:
-            cur = conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            cur = conn.execute(
+                "DELETE FROM sessions WHERE id = ? AND owner_id = ?",
+                (session_id, owner_id),
+            )
             return cur.rowcount > 0
