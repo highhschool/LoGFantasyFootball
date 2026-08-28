@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+/* Neutrals carry a slight green bias so they read as chosen rather than
+   inherited, and sit under the turf-green accent without fighting it. */
+@theme {
+  --color-ground: #f4f7f5;
+  --color-surface: #ffffff;
+  --color-raised: #eaf0ec;
+  --color-ink: #16201c;
+  --color-ink-2: #566159;
+  --color-ink-3: #7c8781;
+  --color-rule: #dbe3dd;
+  --color-accent: #1c6b48;
+  --color-accent-soft: #e1efe7;
+  --color-warn: #8f5510;
+  --color-warn-soft: #f6ebda;
+  --color-danger: #9b2c2c;
+
+  /* Position colours are the one place hue carries meaning rather than
+     decoration -- fantasy readers already scan boards by them. */
+  --color-qb: #b0345a;
+  --color-rb: #1f7a4d;
+  --color-wr: #1d5fa8;
+  --color-te: #a85d1d;
+  --color-k: #6b4ea8;
+  --color-dst: #4a5a66;
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-ground: #0e1412;
+    --color-surface: #151d1a;
+    --color-raised: #1c2622;
+    --color-ink: #e7ede9;
+    --color-ink-2: #9daaa3;
+    --color-ink-3: #75837c;
+    --color-rule: #25302b;
+    --color-accent: #6cc095;
+    --color-accent-soft: #172c22;
+    --color-warn: #d9a45e;
+    --color-warn-soft: #2b2317;
+    --color-danger: #e08585;
+
+    --color-qb: #e8748f;
+    --color-rb: #5fc08e;
+    --color-wr: #6aa6e8;
+    --color-te: #e0a161;
+    --color-k: #a893e0;
+    --color-dst: #92a5b2;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Digits in columns must line up: ADP, bye weeks, pick numbers. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
