@@ -7,6 +7,7 @@ import { Keeper } from "./components/Keeper";
 import { LiveDraftView } from "./components/LiveDraftView";
 import { LiveSetup } from "./components/LiveSetup";
 import { ProfilePage } from "./components/ProfilePage";
+import { SignInDialog } from "./components/SignInDialog";
 import { Setup } from "./components/Setup";
 import type {
   ConnectDraft,
@@ -32,6 +33,7 @@ export default function App() {
   // Who you are, held once here rather than fetched by every tool that asks.
   const [profile, setProfile] = useState<Profile | null>(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [asking, setAsking] = useState(false);
 
   // Mock simulator
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -234,12 +236,25 @@ export default function App() {
   }
 
   return (
-    <Home
-      adp={health?.adp}
-      profile={profile}
-      onPick={setTool}
-      onProfile={() => setShowProfile(true)}
-    />
+    <>
+      <Home
+        adp={health?.adp}
+        profile={profile}
+        onPick={setTool}
+        // Signed out there is nothing to look at, so the dialog is the whole
+        // of it; signed in, the profile page is where the picture lives.
+        onProfile={() => (profile ? setShowProfile(true) : setAsking(true))}
+      />
+      {asking && (
+        <SignInDialog
+          onSignedIn={() => {
+            setAsking(false);
+            me.get().then((r) => setProfile(r.you));
+          }}
+          onClose={() => setAsking(false)}
+        />
+      )}
+    </>
   );
 }
 

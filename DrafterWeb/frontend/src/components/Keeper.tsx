@@ -3,7 +3,7 @@ import { ApiError, keeper } from "../api";
 import type { KeeperOption, KeeperState } from "../types";
 import { Countdown } from "./Countdown";
 import { PositionBadge } from "./PositionBadge";
-import { SignIn } from "./SignIn";
+import { SignInDialog } from "./SignInDialog";
 
 interface Props {
   onBack: () => void;
@@ -22,6 +22,7 @@ export function Keeper({ onBack }: Props) {
   const [season, setSeason] = useState<number | string>("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -61,7 +62,29 @@ export function Keeper({ onBack }: Props) {
   if (!state.you) {
     return (
       <Shell onBack={onBack} deadline={state} onExpire={refresh}>
-        <SignIn onSignedIn={refresh} />
+        <div className="flex flex-col items-start gap-3 rounded-lg border border-rule bg-surface p-5">
+          <p className="text-sm text-ink-3">
+            Choosing a keeper needs the code you were sent, so the app knows
+            whose roster to price.
+          </p>
+          <button
+            type="button"
+            onClick={() => setAsking(true)}
+            className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-ground"
+          >
+            Sign in
+          </button>
+        </div>
+        {asking && (
+          <SignInDialog
+            blurb="Find your name and enter the code you were sent."
+            onSignedIn={() => {
+              setAsking(false);
+              refresh();
+            }}
+            onClose={() => setAsking(false)}
+          />
+        )}
       </Shell>
     );
   }

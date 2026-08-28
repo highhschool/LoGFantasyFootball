@@ -16,15 +16,13 @@ import type { KeeperManager } from "../types";
  */
 export function SignIn({
   onSignedIn,
-  heading = "Who are you?",
+  heading,
   blurb = "Find your name and enter the code you were sent.",
-  compact = false,
 }: {
   onSignedIn: (manager: KeeperManager) => void;
+  /** Omitted where the surrounding panel already carries a title. */
   heading?: string;
   blurb?: string;
-  /** Inline inside another screen, rather than owning one. */
-  compact?: boolean;
 }) {
   const [managers, setManagers] = useState<KeeperManager[]>([]);
   const [userId, setUserId] = useState("");
@@ -50,23 +48,17 @@ export function SignIn({
   }
 
   return (
-    <section
-      className={
-        compact
-          ? "flex flex-col gap-3"
-          : "flex flex-col gap-4 rounded-lg border border-rule bg-surface p-5"
-      }
-    >
-      {!compact && (
-        <div>
+    <section className="flex flex-col gap-4">
+      <div>
+        {heading && (
           <h2 className="text-sm font-semibold tracking-wider text-ink-3 uppercase">
             {heading}
           </h2>
-          <p className="mt-1 text-sm text-ink-3">{blurb}</p>
-        </div>
-      )}
+        )}
+        <p className={`text-sm text-ink-3 ${heading ? "mt-1" : ""}`}>{blurb}</p>
+      </div>
 
-      <div className={compact ? "flex flex-wrap items-end gap-2" : "contents"}>
+      <div className="contents">
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium text-ink-2">Manager</span>
           <select
@@ -104,9 +96,7 @@ export function SignIn({
           type="button"
           disabled={busy || !userId || code.trim().length < 4}
           onClick={submit}
-          className={`rounded-md bg-accent px-4 py-2 font-semibold text-ground disabled:opacity-50 ${
-            compact ? "" : "self-start"
-          }`}
+          className="rounded-md bg-accent px-4 py-2 font-semibold text-ground disabled:opacity-50"
         >
           {busy ? "Checking…" : "Continue"}
         </button>
@@ -114,49 +104,5 @@ export function SignIn({
 
       {error && <p className="text-sm text-danger">{error}</p>}
     </section>
-  );
-}
-
-/**
- * Who you are, wherever that needs saying, with a way to become somebody else.
- *
- * There is no sign-out: a code claims a manager, and claiming with another
- * code takes it over. That is deliberate -- people switch phones and there is
- * nobody here to appeal to -- so the honest control is "not you?" rather than
- * a door that only locks.
- */
-export function Identity({
-  manager,
-  onChange,
-}: {
-  manager: KeeperManager | null;
-  onChange: () => void;
-}) {
-  if (!manager) {
-    return (
-      <button
-        type="button"
-        onClick={onChange}
-        className="rounded-md bg-raised px-3 py-1.5 text-xs font-semibold text-ink-2"
-      >
-        Sign in
-      </button>
-    );
-  }
-
-  return (
-    <span className="flex items-center gap-2 text-xs text-ink-3">
-      Signed in as{" "}
-      <strong className="text-ink-2">
-        {manager.display_name || manager.team_name}
-      </strong>
-      <button
-        type="button"
-        onClick={onChange}
-        className="font-medium text-ink-3 underline underline-offset-2 hover:text-ink"
-      >
-        not you?
-      </button>
-    </span>
   );
 }

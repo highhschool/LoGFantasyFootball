@@ -113,19 +113,20 @@ export function ProfilePage({
       </header>
 
       {!profile || switching ? (
-        <SignIn
-          heading={profile ? "Sign in as somebody else" : "Who are you?"}
-          blurb={
-            profile
-              ? "Entering another manager's code moves this browser to them."
-              : "Find your name and enter the code you were sent."
-          }
-          onSignedIn={(who) => {
-            setSwitching(false);
-            me.get().then((r) => onChanged(r.you));
-            void who;
-          }}
-        />
+        <section className="rounded-lg border border-rule bg-surface p-5">
+          <SignIn
+            heading={profile ? "Sign in as somebody else" : "Who are you?"}
+            blurb={
+              profile
+                ? "Entering another manager's code moves this browser to them."
+                : "Find your name and enter the code you were sent."
+            }
+            onSignedIn={() => {
+              setSwitching(false);
+              me.get().then((r) => onChanged(r.you));
+            }}
+          />
+        </section>
       ) : (
         <>
           <section className="flex items-center gap-4 rounded-lg border border-rule bg-surface p-5">

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, contracts } from "../api";
 import type { ContractBook, ContractMarket, ContractSlate } from "../types";
-import { SignIn } from "./SignIn";
+import { SignInDialog } from "./SignInDialog";
 import { StatusDot, type Phase } from "./StatusDot";
 
 interface Props {
@@ -27,6 +27,7 @@ export function Contracts({ onBack }: Props) {
   const [book, setBook] = useState<ContractBook | null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
 
   const refresh = useCallback(async (slateId?: string | null) => {
     try {
@@ -69,10 +70,29 @@ export function Contracts({ onBack }: Props) {
       {error && <p className="text-sm text-danger">{error}</p>}
 
       {signedIn === false && (
-        <SignIn
-          heading="Sign in to trade"
-          blurb="Anyone can watch the board. Placing a contract needs the code you were sent."
-          onSignedIn={() => refresh(chosen)}
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-rule bg-surface px-4 py-3">
+          <p className="text-sm text-ink-3">
+            Anyone can watch the board. Trading needs your code.
+          </p>
+          <button
+            type="button"
+            onClick={() => setAsking(true)}
+            className="ml-auto rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-ground"
+          >
+            Sign in
+          </button>
+        </div>
+      )}
+
+      {asking && (
+        <SignInDialog
+          title="Sign in to trade"
+          blurb="Placing a contract needs the code you were sent."
+          onSignedIn={() => {
+            setAsking(false);
+            refresh(chosen);
+          }}
+          onClose={() => setAsking(false)}
         />
       )}
 

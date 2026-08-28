@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError, keeper as keeperApi } from "../api";
 import type { KeeperDraft, Player, Profile } from "../types";
 import { PositionBadge } from "./PositionBadge";
-import { SignIn } from "./SignIn";
+import { SignInDialog } from "./SignInDialog";
 
 interface Props {
   teams: number;
@@ -154,16 +154,15 @@ export function KeeperEditor({ teams, rounds, keepers, profile, onChange, onSign
       </div>
 
       {askSignIn && !profile && (
-        <div className="mt-4 rounded-md border border-rule bg-ground p-4">
-          <SignIn
-            heading="Sign in to import your league"
-            blurb="Keepers come from your league, so the app needs to know whose you are."
-            onSignedIn={() => {
-              setAskSignIn(false);
-              onSignedIn();
-            }}
-          />
-        </div>
+        <SignInDialog
+          title="Sign in to import your league"
+          blurb="Keepers come from your league, so the app needs to know whose it is."
+          onSignedIn={() => {
+            setAskSignIn(false);
+            onSignedIn();
+          }}
+          onClose={() => setAskSignIn(false)}
+        />
       )}
 
       {note && <p className="mt-3 text-sm text-ink-2">{note}</p>}
