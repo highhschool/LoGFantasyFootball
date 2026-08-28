@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     mode        TEXT NOT NULL DEFAULT 'mock',
     seed        INTEGER NOT NULL,
     owner_id    TEXT NOT NULL DEFAULT '',
+    source_id   TEXT NOT NULL DEFAULT '',
     randomness  REAL NOT NULL DEFAULT 1.0,
     pick_seconds INTEGER NOT NULL DEFAULT 0,
     config_json TEXT NOT NULL,
@@ -63,6 +64,7 @@ def log_from_json(raw: str) -> list[LoggedPick]:
 # Existing sessions keep working rather than erroring on a missing column.
 ADDED_COLUMNS = {
     "owner_id": "TEXT NOT NULL DEFAULT ''",
+    "source_id": "TEXT NOT NULL DEFAULT ''",
     "randomness": "REAL NOT NULL DEFAULT 1.0",
     "pick_seconds": "INTEGER NOT NULL DEFAULT 0",
 }
@@ -98,16 +100,17 @@ class SessionStore:
         randomness: float = 1.0,
         pick_seconds: int = 0,
         owner_id: str = "",
+        source_id: str = "",
     ) -> str:
         session_id = uuid.uuid4().hex[:12]
         stamp = _now()
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO sessions (id, name, mode, seed, owner_id, randomness,"
-                " pick_seconds, config_json, log_json, created_at, updated_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (session_id, name, mode, seed, owner_id, randomness, pick_seconds,
-                 config_to_json(config), "[]", stamp, stamp),
+                "INSERT INTO sessions (id, name, mode, seed, owner_id, source_id,"
+                " randomness, pick_seconds, config_json, log_json, created_at,"
+                " updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (session_id, name, mode, seed, owner_id, source_id, randomness,
+                 pick_seconds, config_to_json(config), "[]", stamp, stamp),
             )
         return session_id
 
@@ -126,6 +129,7 @@ class SessionStore:
             "mode": row["mode"],
             "seed": row["seed"],
             "owner_id": row["owner_id"],
+            "source_id": row["source_id"],
             "randomness": row["randomness"],
             "pick_seconds": row["pick_seconds"],
             "config": config_from_json(row["config_json"]),
@@ -160,15 +164,25 @@ class SessionStore:
             )
             return cur.rowcount > 0
 
-    def list(self, owner_id: str, limit: int = 25) -> list[dict]:
-        """Only your own drafts. Other people's are not listed at all."""
+    def list(self, owner_id: str, mode: str | None = None, limit: int = 25) -> list[dict]:
+        """Your own drafts for one tool.
+
+        The mock simulator and the live assistant keep separate lists; a mode
+        is always passed in practice so neither shows the other's sessions.
+        """
+        sql = (
+            "SELECT id, name, mode, created_at, updated_at, log_json"
+            " FROM sessions WHERE owner_id = ?"
+        )
+        params: list[object] = [owner_id]
+        if mode is not None:
+            sql += " AND mode = ?"
+            params.append(mode)
+        sql += " ORDER BY updated_at DESC LIMIT ?"
+        params.append(limit)
+
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT id, name, mode, created_at, updated_at, log_json"
-                " FROM sessions WHERE owner_id = ?"
-                " ORDER BY updated_at DESC LIMIT ?",
-                (owner_id, limit),
-            ).fetchall()
+            rows = conn.execute(sql, params).fetchall()
         return [
             {
                 "id": r["id"],

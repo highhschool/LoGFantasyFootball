@@ -190,7 +190,7 @@ def _load_or_404(store: SessionStore, session_id: str, owner: str) -> dict:
     other people's draft ids, and buys nothing: either way you cannot open it.
     """
     session = store.load(session_id, owner)
-    if session is None:
+    if session is None or session["mode"] != "mock":
         raise HTTPException(status_code=404, detail="no such session")
     return session
 
@@ -248,7 +248,8 @@ def list_sessions(
     store: SessionStore = Depends(get_store),
     owner: str = Depends(get_owner),
 ) -> dict:
-    return {"sessions": store.list(owner)}
+    # Mock drafts only; the assistant keeps its own list.
+    return {"sessions": store.list(owner, mode="mock")}
 
 
 @router.get("/{session_id}")

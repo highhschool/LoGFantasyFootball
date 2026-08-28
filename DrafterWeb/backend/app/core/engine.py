@@ -27,12 +27,29 @@ class DraftError(RuntimeError):
     """An illegal pick."""
 
 
+# Sits beyond any ranked player, so an unranked pick never sorts as a bargain.
+UNRANKED_ADP = 999.0
+
+
 @dataclass(frozen=True, slots=True)
 class LoggedPick:
-    """One entry in the event log: who was taken, and by what mechanism."""
+    """One entry in the event log: who was taken, and by what mechanism.
+
+    A real draft reaches players the rankings do not cover -- the 2025 board
+    took a round-15 back who is not in a 249-player ADP feed at all. Rather
+    than stall, the log describes such a pick itself, so the seat is filled
+    and every later pick stays in the right place.
+    """
 
     player_key: str
     source: str = "user"
+    name: str = ""
+    position: str = ""
+    team: str = ""
+
+    @property
+    def is_unranked(self) -> bool:
+        return bool(self.name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,30 +164,61 @@ def _place(
     source: str,
     count_position: bool = True,
 ) -> None:
-    """Record a pick on the board.
+    """Record a ranked player on the board.
 
     `count_position` is False for keepers, whose position was already counted
     when they were reserved before the draft began.
     """
+    _record(
+        state, cell,
+        key=player.key, name=player.name, position=player.position,
+        team=player.team, bye_week=player.bye_week, adp=player.adp,
+        source=source, count_position=count_position,
+    )
+
+
+def _place_unranked(state: DraftState, cell: PickSlot, entry: LoggedPick) -> None:
+    """Record a pick whose player is not in the rankings."""
+    _record(
+        state, cell,
+        key=entry.player_key, name=entry.name, position=entry.position,
+        team=entry.team, bye_week=None, adp=UNRANKED_ADP,
+        source=entry.source, count_position=True,
+    )
+
+
+def _record(
+    state: DraftState,
+    cell: PickSlot,
+    *,
+    key: str,
+    name: str,
+    position: str,
+    team: str,
+    bye_week: int | None,
+    adp: float,
+    source: str,
+    count_position: bool,
+) -> None:
     pick = Pick(
         overall=cell.overall,
         round=cell.round,
         pick_in_round=cell.pick_in_round,
         team_slot=cell.team_slot,
-        player_key=player.key,
-        player_name=player.name,
-        position=player.position,
-        team=player.team,
-        bye_week=player.bye_week,
-        adp=player.adp,
+        player_key=key,
+        player_name=name,
+        position=position,
+        team=team,
+        bye_week=bye_week,
+        adp=adp,
         source=source,
     )
     state.picks.append(pick)
-    state.drafted.add(player.key)
-    team = state.teams[cell.team_slot]
-    team.picks.append(pick)
-    if count_position:
-        team.position_counts[player.position] += 1
+    state.drafted.add(key)
+    roster = state.teams[cell.team_slot]
+    roster.picks.append(pick)
+    if count_position and position in state.config.position_limits:
+        roster.position_counts[position] += 1
 
 
 def replay(config: DraftConfig, pool: PlayerPool, log: list[LoggedPick]) -> DraftState:
@@ -214,9 +262,12 @@ def replay(config: DraftConfig, pool: PlayerPool, log: list[LoggedPick]) -> Draf
 
         entry = pending.pop(0)
         player = pool.by_key.get(entry.player_key)
-        if player is None:
+        if player is not None:
+            _place(state, cell, player, entry.source)
+        elif entry.is_unranked:
+            _place_unranked(state, cell, entry)
+        else:
             raise DraftError(f"log references unknown player {entry.player_key!r}")
-        _place(state, cell, player, entry.source)
 
     return state
 

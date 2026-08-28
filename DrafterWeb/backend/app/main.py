@@ -16,11 +16,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from . import config
-from .api import sessions
+from .api import assistant, sessions
 from .core.models import DraftConfig, RankingsError
 from .core.order import build_board, picks_for_slot
 from .core import adp
 from .core.rankings import PlayerPool, build_pool
+from .integrations.sleeper import SleeperClient
 from .store import SessionStore
 
 logging.basicConfig(
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 _pool: PlayerPool | None = None
 _load_error: str | None = None
 _store: SessionStore | None = None
+_sleeper: SleeperClient | None = None
 
 
 def _load() -> None:
@@ -84,6 +86,13 @@ def _require_pool() -> PlayerPool:
 # Public names the routers depend on.
 def require_pool() -> PlayerPool:
     return _require_pool()
+
+
+def get_sleeper_client() -> SleeperClient:
+    global _sleeper
+    if _sleeper is None:
+        _sleeper = SleeperClient(cache_dir=config.DATA_DIR / "sleeper-cache")
+    return _sleeper
 
 
 def get_session_store() -> SessionStore:
@@ -185,6 +194,7 @@ def board(
 
 
 app.include_router(sessions.router)
+app.include_router(assistant.router)
 
 
 # Mounted last so it never shadows /api.
