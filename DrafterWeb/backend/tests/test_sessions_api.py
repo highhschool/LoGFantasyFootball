@@ -290,3 +290,53 @@ class TestKeepersPerTeam:
         })
         assert r.status_code == 422
         assert "slot 11" in r.json()["detail"]
+
+
+class TestDeepDrafts:
+    """Rounds beyond the default 15-spot roster."""
+
+    @staticmethod
+    def _ceiling(client, teams=12):
+        return client.get(f"/api/roster-capacity?teams={teams}").json()["max_rounds"]
+
+    @pytest.mark.parametrize("offset", [1, 3])
+    def test_a_deep_draft_starts_and_completes(self, client, offset):
+        # Deeper than the 15-spot default roster, but within this pool.
+        rounds = min(15 + offset, self._ceiling(client))
+        state = new_session(client, rounds=rounds, teams=12, your_slot=6)
+        assert sum(state["config"]["position_limits"].values()) >= rounds
+
+        final = client.post(f"/api/sessions/{state['id']}/simulate").json()
+        assert final["complete"] is True
+        assert len(final["picks"]) == 12 * rounds
+        assert len(final["your_roster"]) == rounds
+
+    def test_a_deep_draft_has_no_duplicate_players(self, client):
+        state = new_session(client, rounds=self._ceiling(client), teams=12)
+        final = client.post(f"/api/sessions/{state['id']}/simulate").json()
+        names = [p["player_name"] for p in final["picks"]]
+        assert len(names) == len(set(names))
+
+    def test_beyond_the_pool_is_rejected_with_a_reason(self, client):
+        too_deep = self._ceiling(client) + 10
+        r = client.post(
+            "/api/sessions", json={"teams": 12, "rounds": too_deep, "your_slot": 1}
+        )
+        assert r.status_code == 422
+        assert f"cannot run {too_deep} rounds" in r.json()["detail"]
+
+    def test_capacity_endpoint_matches_what_is_accepted(self, client):
+        capacity = client.get("/api/roster-capacity?teams=12").json()
+        ceiling = capacity["max_rounds"]
+
+        assert client.post(
+            "/api/sessions", json={"teams": 12, "rounds": ceiling, "your_slot": 1}
+        ).status_code == 200
+        assert client.post(
+            "/api/sessions", json={"teams": 12, "rounds": ceiling + 1, "your_slot": 1}
+        ).status_code == 422
+
+    def test_bigger_leagues_run_shallower(self, client):
+        wide = client.get("/api/roster-capacity?teams=14").json()["max_rounds"]
+        narrow = client.get("/api/roster-capacity?teams=8").json()["max_rounds"]
+        assert wide < narrow

@@ -17,6 +17,7 @@ from ..core.engine import DraftError, DraftState, LoggedPick, append_pick, repla
 from ..core.models import ConfigError, DraftConfig, Keeper
 from ..core.order import picks_until_next
 from ..core.rankings import PlayerPool
+from ..core.roster import auto_limits
 from ..store import SessionStore
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -161,7 +162,13 @@ def create_session(
     pool: PlayerPool = Depends(get_pool),
     store: SessionStore = Depends(get_store),
 ) -> dict:
-    limits = body.position_limits or dict(DraftConfig(year=app_config.SEASON).position_limits)
+    # Defaults sum to 15, so a deeper draft needs more roster spots than the
+    # league's usual shape allows. Grow them to fit, bounded by pool depth.
+    try:
+        limits = body.position_limits or auto_limits(pool, body.teams, body.rounds)
+    except ConfigError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     draft = DraftConfig(
         year=app_config.SEASON,
         teams=body.teams,

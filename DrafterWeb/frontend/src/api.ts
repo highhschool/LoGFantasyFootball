@@ -59,8 +59,18 @@ export interface Health {
   adp?: AdpProvenance;
 }
 
+export interface RosterCapacity {
+  teams: number;
+  max_rounds: number;
+  per_position: Record<string, number>;
+  suggested: Record<string, number>;
+}
+
 export const api = {
   health: () => request<Health>("/api/health"),
+
+  rosterCapacity: (teams: number) =>
+    request<RosterCapacity>(`/api/roster-capacity?teams=${teams}`),
 
   listSessions: () =>
     request<{ sessions: SessionSummary[] }>("/api/sessions").then((r) => r.sessions),

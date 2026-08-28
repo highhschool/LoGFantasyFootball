@@ -4,8 +4,12 @@ Self-hosted draft tool for the National Goon Fantasy League. See [PLAN.md](PLAN.
 for the architecture and phase plan.
 
 **Status: P1 complete.** The mock draft sandbox is playable: pick against eleven
-bots, undo, autopick, or simulate the rest of the draft. ADP comes live from the
-public feed, so the app is self-contained. 161 backend tests pass.
+bots with an optional pick clock, set keepers, undo, autopick, or simulate the
+rest. ADP comes live from the public feed, so the app is self-contained.
+196 backend tests pass.
+
+**Next: P2, the live draft assistant.** See the handoff at the end of
+[PLAN.md](PLAN.md).
 
 Live at <https://ngfldrafter.com>.
 
@@ -97,11 +101,13 @@ python -m uvicorn app.main:app --reload --port 8000
 | `GET /api/health` | Season, player count, and ADP provenance |
 | `GET /api/players` | `?position=RB`, `?search=jamarr`, `?limit=500` |
 | `GET /api/board` | The empty snake board for a config |
+| `GET /api/roster-capacity` | `?teams=12` — how deep a draft the pool supports |
 | `POST /api/sessions` | Start a mock draft; bots pick up to your slot |
 | `GET /api/sessions/{id}/available` | Draftable players, filtered |
 | `POST /api/sessions/{id}/pick` | Draft a player, then run the bots |
 | `POST /api/sessions/{id}/undo` | Rewind to your own last decision |
 | `POST /api/sessions/{id}/simulate` | Run the draft to the end |
+| `PATCH /api/sessions/{id}` | Rename, or change the pick clock |
 | `POST /api/rankings/reload` | Admin only; needs `X-Admin-Token` |
 
 Unavailable ADP degrades rather than crashes: the container stays up, health
