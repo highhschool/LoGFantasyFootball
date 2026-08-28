@@ -351,3 +351,95 @@ class TestWhoSeesWhat:
     def test_the_owner_view_is_gated(self, app, synced):
         with TestClient(app) as anyone:
             assert anyone.get("/api/admin/keepers").status_code == 404
+
+
+class TestManagersLeavingTheLeague:
+    """A new season brings new members, and loses some.
+
+    Only ever adding left a departed manager holding a working code and a row
+    on the board -- and a twelve-team league offering fourteen names.
+    """
+
+    def test_a_departed_manager_is_removed(self, app, synced, monkeypatch):
+        from app.integrations.sleeper import Manager
+
+        # u2 leaves, u3 joins.
+        monkeypatch.setattr(
+            main._sleeper, "league_managers",
+            lambda league_id: [
+                Manager(user_id="u1", display_name="brayden", team_name="Team Phoenix"),
+                Manager(user_id="u3", display_name="newcomer", team_name="Newcomer FC"),
+            ],
+        )
+        with TestClient(app) as owner:
+            result = owner.post("/api/admin/keepers/sync", headers=ADMIN).json()
+            listed = owner.get("/api/admin/keepers/codes", headers=ADMIN).json()["managers"]
+
+        assert result["added"] == 1
+        assert result["removed"] == 1
+        assert {m["user_id"] for m in listed} == {"u1", "u3"}
+
+    def test_a_departed_manager_keeps_no_selection(self, app, synced, monkeypatch):
+        from app.integrations.sleeper import Manager
+
+        with TestClient(app) as c:
+            claim(c, synced["u2"])
+            first = next(
+                o for o in c.get("/api/keeper/roster").json()["options"] if o["keepable"]
+            )
+            c.post("/api/keeper/pick", json={"player_key": first["key"]})
+
+        monkeypatch.setattr(
+            main._sleeper, "league_managers",
+            lambda league_id: [
+                Manager(user_id="u1", display_name="brayden", team_name="Team Phoenix"),
+            ],
+        )
+        with TestClient(app) as owner:
+            owner.post("/api/admin/keepers/sync", headers=ADMIN)
+            rows = owner.get("/api/admin/keepers", headers=ADMIN).json()["keepers"]
+
+        assert {r["user_id"] for r in rows} == {"u1"}
+
+    def test_a_remaining_manager_keeps_their_code_and_pick(self, app, synced, monkeypatch):
+        from app.integrations.sleeper import Manager
+
+        with TestClient(app) as c:
+            claim(c, synced["u1"])
+            first = next(
+                o for o in c.get("/api/keeper/roster").json()["options"] if o["keepable"]
+            )
+            c.post("/api/keeper/pick", json={"player_key": first["key"]})
+
+        monkeypatch.setattr(
+            main._sleeper, "league_managers",
+            lambda league_id: [
+                Manager(user_id="u1", display_name="brayden", team_name="Team Phoenix"),
+            ],
+        )
+        with TestClient(app) as owner:
+            owner.post("/api/admin/keepers/sync", headers=ADMIN)
+            after = owner.get("/api/admin/keepers/codes", headers=ADMIN).json()["managers"]
+            rows = owner.get("/api/admin/keepers", headers=ADMIN).json()["keepers"]
+
+        assert after[0]["code"] == synced["u1"]["code"], "a sent code must survive"
+        assert rows[0]["player_name"] == first["name"]
+
+    def test_the_departed_manager_can_no_longer_claim(self, app, synced, monkeypatch):
+        from app.integrations.sleeper import Manager
+
+        monkeypatch.setattr(
+            main._sleeper, "league_managers",
+            lambda league_id: [
+                Manager(user_id="u1", display_name="brayden", team_name="Team Phoenix"),
+            ],
+        )
+        with TestClient(app) as owner:
+            owner.post("/api/admin/keepers/sync", headers=ADMIN)
+
+        with TestClient(app) as c:
+            r = c.post(
+                "/api/keeper/claim",
+                json={"user_id": "u2", "code": synced["u2"]["code"]},
+            )
+        assert r.status_code == 403, "their code must stop working"

@@ -244,13 +244,18 @@ class SessionStore:
 
     # ------------------------------------------------------------- keepers
 
-    def sync_managers(self, managers: list[tuple[str, str, str]]) -> int:
-        """Record the league's members, minting a code for anyone new.
+    def sync_managers(self, managers: list[tuple[str, str, str]]) -> dict:
+        """Reconcile the stored members with the league's.
 
-        Existing codes are left alone: re-syncing must not invalidate a code
-        somebody has already been sent.
+        Existing codes are left alone -- re-syncing must never invalidate one
+        somebody has already been sent -- but managers who have left the league
+        are removed along with their selection. Only ever adding leaves a
+        departed manager holding a working code and a row on the board, and a
+        twelve-team league offering fourteen names to choose from.
         """
+        incoming = {user_id for user_id, _, _ in managers}
         added = 0
+
         with self._connect() as conn:
             for user_id, display_name, team_name in managers:
                 existing = conn.execute(
@@ -269,7 +274,17 @@ class SessionStore:
                         (user_id, display_name, team_name, _new_code()),
                     )
                     added += 1
-        return added
+
+            stored = {
+                r["user_id"]
+                for r in conn.execute("SELECT user_id FROM keeper_managers")
+            }
+            departed = stored - incoming
+            for user_id in departed:
+                conn.execute("DELETE FROM keeper_picks WHERE user_id = ?", (user_id,))
+                conn.execute("DELETE FROM keeper_managers WHERE user_id = ?", (user_id,))
+
+        return {"added": added, "removed": len(departed), "total": len(incoming)}
 
     def managers(self, with_codes: bool = False) -> list[dict]:
         """The league's members. Codes are admin-only."""

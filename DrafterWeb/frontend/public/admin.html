@@ -281,8 +281,14 @@
     try {
       const r = await fetch("/api/admin/keepers/sync", { method: "POST" });
       const d = await r.json();
+      // A departed manager being dropped is the part worth seeing: it takes
+      // their code and their selection with it.
+      const churn = [
+        d.added ? `${d.added} new` : "",
+        d.removed ? `${d.removed} gone` : "",
+      ].filter(Boolean).join(", ");
       e.target.textContent = r.ok
-        ? `Synced ${d.managers} (${d.added} new)`
+        ? `Synced ${d.managers}${churn ? ` (${churn})` : ""}`
         : `Failed: ${d.detail || r.status}`;
       await loadKeepers();
     } catch (err) {

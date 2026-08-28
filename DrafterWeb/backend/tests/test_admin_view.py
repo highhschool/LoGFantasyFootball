@@ -131,9 +131,13 @@ class TestSeeingEverySession:
 class TestItDestroysNothing:
     """Viewing is one thing; deleting someone's draft is a larger blast radius.
 
-    Stated as "no route changes anything" at first, which the keeper sync then
-    broke by being a POST. The rule was never about the verb -- it is that
-    nothing behind this gate can destroy or rewrite what anyone else made.
+    This invariant has been narrowed twice by real changes. First it read "no
+    route changes anything", which the keeper sync broke by being a POST. Then
+    it read "nothing here destroys what anyone made", which sync broke again by
+    dropping managers who left the league -- deliberately, since their code and
+    their selection have to go with them. What survives is the part that was
+    always the point: the sync mirrors the league roster and touches nothing
+    else, and no drafted session can be deleted or rewritten from here.
     """
 
     def test_nothing_deletes_or_replaces(self):
@@ -150,7 +154,7 @@ class TestItDestroysNothing:
         }
         assert writes == {"/api/admin/keepers/sync"}
 
-    def test_that_sync_is_additive_and_idempotent(self, client, monkeypatch):
+    def test_that_sync_is_idempotent(self, client, monkeypatch):
         """It mints codes for new managers and leaves existing ones alone."""
         from app.integrations.sleeper import Manager, SleeperClient
 
@@ -166,6 +170,32 @@ class TestItDestroysNothing:
 
         assert first["added"] == 1
         assert again["added"] == 0, "re-syncing must not re-mint anyone's code"
+        assert again["removed"] == 0, "and must not drop anyone still in the league"
+
+    def test_that_sync_leaves_drafted_sessions_alone(self, shared_app, monkeypatch):
+        """Its reach stops at the league roster.
+
+        Removing a departed manager deletes rows; nothing it deletes may be
+        somebody's draft.
+        """
+        from app.integrations.sleeper import Manager, SleeperClient
+
+        with TestClient(shared_app) as maker:
+            session = make_session(maker, name="untouched")
+
+        class Fake(SleeperClient):
+            def league_managers(self, league_id):
+                return [Manager(user_id="m9", display_name="z", team_name="Z")]
+
+        monkeypatch.setattr(main, "_sleeper", Fake(cache_dir=Path(".")))
+        monkeypatch.setattr(app_config, "SLEEPER_LEAGUE_ID", "L")
+
+        with TestClient(shared_app) as admin:
+            admin.post("/api/admin/keepers/sync", headers=ADMIN)
+            after = admin.get(f"/api/admin/sessions/{session['id']}", headers=ADMIN)
+
+        assert after.status_code == 200
+        assert after.json()["name"] == "untouched"
 
     def test_the_admin_gate_does_not_leak_into_the_session_routes(self, shared_app):
         """Being the owner must not grant a browser someone else's sessions."""

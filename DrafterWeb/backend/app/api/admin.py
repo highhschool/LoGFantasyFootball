@@ -171,7 +171,7 @@ def keeper_sync(
     except SleeperError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    added = store.sync_managers(
+    result = store.sync_managers(
         [(m.user_id, m.display_name, m.team_name) for m in managers]
     )
-    return {"managers": len(managers), "added": added}
+    return {"managers": len(managers), **result}
