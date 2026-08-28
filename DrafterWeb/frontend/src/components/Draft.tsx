@@ -7,10 +7,31 @@ import { PickClock } from "./PickClock";
 import { InlineName } from "./InlineName";
 import { PlayerTable } from "./PlayerTable";
 import { RosterPanel } from "./RosterPanel";
+import { VerticalResizer } from "./VerticalResizer";
 
 // The board's share of the main column: at the first pick, and once every
 // cell is filled. It never takes more than the larger share, because the
 // player list is what you actually act on.
+const BOARD_HEIGHT_KEY = "ngfl.boardHeight";
+const BOARD_MIN_HEIGHT = 160;
+const BOARD_DEFAULT_FRACTION = 0.42;
+
+/** Last dragged height, or a sensible fraction of this viewport. */
+function readStoredHeight(): number {
+  const fallback = Math.round(window.innerHeight * BOARD_DEFAULT_FRACTION);
+  try {
+    const stored = Number(localStorage.getItem(BOARD_HEIGHT_KEY));
+    return Number.isFinite(stored) && stored >= BOARD_MIN_HEIGHT ? stored : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Leaves room for the player list and roster below. */
+function maxBoardHeightFor(viewportHeight: number): number {
+  return Math.max(BOARD_MIN_HEIGHT, viewportHeight - 320);
+}
+
 const BOARD_MIN_SHARE = 0.25;
 const BOARD_MAX_SHARE = 0.44;
 
@@ -34,6 +55,28 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
   // Widen: the board spans the full width and everything else stacks under
   // it, for when you want to read the whole board rather than pick from it.
   const [wideBoard, setWideBoard] = useState(false);
+  const [boardHeight, setBoardHeight] = useState(readStoredHeight);
+
+  // Remember where the divider was left. Wrapped because storage throws
+  // outright in some privacy modes rather than just returning nothing.
+  useEffect(() => {
+    try {
+      localStorage.setItem(BOARD_HEIGHT_KEY, String(boardHeight));
+    } catch {
+      // Not worth surfacing; the layout simply will not persist.
+    }
+  }, [boardHeight]);
+
+  // A height that fit a tall window would overflow a short one, so pull it
+  // back in when the viewport shrinks.
+  useEffect(() => {
+    function clampToViewport() {
+      setBoardHeight((h) => Math.min(h, maxBoardHeightFor(window.innerHeight)));
+    }
+    clampToViewport();
+    window.addEventListener("resize", clampToViewport);
+    return () => window.removeEventListener("resize", clampToViewport);
+  }, []);
 
   // Re-fetch whenever the board moves or the filters change. Debounced so
   // typing a name does not fire a request per keystroke.
@@ -79,6 +122,7 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
   // ratios, so the two numbers below are the thing you actually want to tune.
   const filled =
     session.picks.length / (session.config.teams * session.config.rounds);
+  const maxBoardHeight = maxBoardHeightFor(window.innerHeight);
   const boardShare = BOARD_MIN_SHARE + (BOARD_MAX_SHARE - BOARD_MIN_SHARE) * filled;
   const boardGrow = boardShare;
   const listGrow = 1 - boardShare;
@@ -166,7 +210,20 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
         </div>
 
         {showBoard && wideBoard && (
-          <BoardGrid session={session} className="h-[45vh] min-h-56 shrink-0" />
+          <>
+            <BoardGrid
+              session={session}
+              style={{ height: boardHeight }}
+              className="shrink-0"
+            />
+            <VerticalResizer
+              height={boardHeight}
+              onHeight={setBoardHeight}
+              min={BOARD_MIN_HEIGHT}
+              max={maxBoardHeight}
+              label="Resize the draft board"
+            />
+          </>
         )}
 
         <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
