@@ -366,3 +366,89 @@ class TestOverfilledPositions:
         advice = recommend(state, pool_2025, limit=8)
         assert advice[0].player.position != "QB"
         assert advice[0].need > 0
+
+
+class TestStartersBeatBench:
+    """The change that mattered most: a first back and a fifth are not alike."""
+
+    @staticmethod
+    def _roster(pool, config, positions):
+        """Give slot 1 exactly these positions, and stop there.
+
+        Running past slot 1's nth pick fills its later cells too, which is how
+        an earlier version of this helper handed it nine players while claiming
+        three.
+        """
+        from app.core.order import picks_for_slot
+
+        mine = picks_for_slot(config, 1)[: len(positions)]
+        available = {p: [q for q in pool.players if q.position == p] for p in set(positions)}
+
+        chosen, taken = [], 0
+        for position in positions:
+            chosen.append(available[position].pop(0))
+        spare = iter(p for p in pool.players if p not in chosen)
+
+        log = []
+        for overall in range(1, mine[-1] + 1):
+            if overall in mine:
+                log.append(LoggedPick(chosen[taken].key))
+                taken += 1
+            else:
+                log.append(LoggedPick(next(spare).key))
+        return replay(config, pool, log)
+
+    def test_an_empty_starting_slot_is_named(self, config, pool_2025):
+        state = replay(config, pool_2025, [])
+        advice = recommend(state, pool_2025, limit=8)
+        assert all(a.slot == "starter" for a in advice), "nothing is filled yet"
+        assert any("empty starting" in r for a in advice for r in a.reasons)
+
+    def test_starting_slots_count_down(self, config, pool_2025):
+        state = replay(config, pool_2025, [])
+        assert recommend(state, pool_2025, limit=1)[0].starters_left == 10
+
+        after = self._roster(pool_2025, config, ["QB", "RB", "WR"])
+        assert recommend(after, pool_2025, limit=1)[0].starters_left == 7
+
+    def test_a_backup_quarterback_is_bench_not_a_starter(self, config, pool_2025):
+        state = self._roster(pool_2025, config, ["QB", "RB", "WR"])
+        qb = next(
+            (a for a in recommend(state, pool_2025, limit=8) if a.player.position == "QB"),
+            None,
+        )
+        if qb is None:
+            pytest.skip("QB not offered at this board state")
+        assert qb.slot == "bench"
+        assert any("bench depth" in r for r in qb.reasons)
+
+    def test_a_third_back_takes_the_flex(self, config, pool_2025):
+        state = self._roster(pool_2025, config, ["RB", "RB"])
+        rb = next(
+            (a for a in recommend(state, pool_2025, limit=8) if a.player.position == "RB"),
+            None,
+        )
+        if rb is None:
+            pytest.skip("RB not offered at this board state")
+        assert rb.slot == "flex"
+        assert any("flex" in r for r in rb.reasons)
+
+    def test_a_starter_outranks_bench_depth_at_a_steeper_position(self, config, pool_2025):
+        """The whole point: filling the lineup beats hoarding one position."""
+        state = self._roster(pool_2025, config, ["QB", "QB", "QB"])
+        advice = recommend(state, pool_2025, limit=8)
+
+        assert advice[0].slot in {"starter", "flex"}
+        assert advice[0].player.position != "QB"
+
+    def test_the_lineup_comes_from_the_config(self, pool_2025):
+        # A league starting two quarterbacks values the second one.
+        two_qb = DraftConfig(
+            year=2025, teams=12, rounds=15, your_slot=1,
+            lineup_slots=(
+                ("slots_qb", 2), ("slots_rb", 2), ("slots_wr", 2), ("slots_te", 1),
+                ("slots_flex", 1), ("slots_k", 1), ("slots_def", 1), ("slots_bn", 5),
+            ),
+        )
+        assert two_qb.lineup.starters["QB"] == 2
+        assert two_qb.lineup.starting_spots == 10

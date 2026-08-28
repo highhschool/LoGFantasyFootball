@@ -47,6 +47,8 @@ class DraftInfo:
     teams: int
     rounds: int
     slot_to_roster: dict[int, int]
+    # Raw slot counts, so the lineup can be read rather than assumed.
+    slots: dict[str, int]
 
     @property
     def is_snake(self) -> bool:
@@ -97,6 +99,7 @@ def parse_draft(payload: dict) -> DraftInfo:
         teams=_as_int(settings.get("teams")),
         rounds=_as_int(settings.get("rounds")),
         slot_to_roster={_as_int(k): _as_int(v) for k, v in raw_slots.items()},
+        slots={k: v for k, v in settings.items() if k.startswith("slots_")},
     )
 
 

@@ -22,6 +22,15 @@ export function AdvicePanel({ advice, loading, onDraft, canDraft, yourTurn }: Pr
         {!yourTurn && (
           <span className="text-[11px] text-ink-3">if you were picking now</span>
         )}
+        {advice.length > 0 && (
+          <span className="ml-auto text-[11px] text-ink-3">
+            {advice[0].starters_left === 0
+              ? "lineup full"
+              : `${advice[0].starters_left} starting ${
+                  advice[0].starters_left === 1 ? "spot" : "spots"
+                } to fill`}
+          </span>
+        )}
       </h2>
 
       {loading && advice.length === 0 ? (
@@ -37,6 +46,7 @@ export function AdvicePanel({ advice, loading, onDraft, canDraft, yourTurn }: Pr
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div className="flex items-center gap-2">
                   <PositionBadge position={a.position} />
+                  <SlotMark slot={a.slot} />
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">
                     {a.name}
                   </span>
@@ -105,6 +115,35 @@ function Pressure({ advice }: { advice: Advice }) {
       title={`Wait a turn and the best ${advice.position} left is likely ${advice.alternative} (ADP ${advice.alternative_adp.toFixed(1)})`}
     >
       −{Math.round(advice.dropoff)} picks if you wait
+    </span>
+  );
+}
+
+/**
+ * Where the pick would land in your lineup.
+ *
+ * The distinction the advisor was missing entirely: a first running back
+ * fills a starting slot and a fifth sits behind four others, and until this
+ * existed they were weighted alike.
+ */
+function SlotMark({ slot }: { slot: Advice["slot"] }) {
+  if (slot === "starter") {
+    return (
+      <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-accent uppercase">
+        starts
+      </span>
+    );
+  }
+  if (slot === "flex") {
+    return (
+      <span className="rounded bg-raised px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-ink-2 uppercase">
+        flex
+      </span>
+    );
+  }
+  return (
+    <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-ink-3 uppercase">
+      bench
     </span>
   );
 }

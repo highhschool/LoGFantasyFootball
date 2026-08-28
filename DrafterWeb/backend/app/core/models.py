@@ -65,6 +65,20 @@ class DraftConfig:
     your_slot: int = 6
     position_limits: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_POSITION_LIMITS))
     keepers: tuple[Keeper, ...] = ()
+    # The starting slots this roster fills, read from Sleeper for a live draft.
+    # Position limits say how many of a position you plan to carry; this says
+    # how many of them actually start, which is what makes a first back worth
+    # more than a fifth. Stored as the raw Sleeper slot counts so the config
+    # serializes as plain data.
+    lineup_slots: tuple[tuple[str, int], ...] = ()
+
+    @property
+    def lineup(self):
+        from .lineup import default_lineup, from_sleeper_settings
+
+        if not self.lineup_slots:
+            return default_lineup()
+        return from_sleeper_settings(dict(self.lineup_slots))
 
     @property
     def total_picks(self) -> int:

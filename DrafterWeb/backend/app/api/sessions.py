@@ -97,6 +97,7 @@ def _serialize(session: dict, state: DraftState, pool: PlayerPool) -> dict:
             "rounds": state.config.rounds,
             "your_slot": your_slot,
             "position_limits": state.config.position_limits,
+            "lineup": state.config.lineup.as_dict(),
             # The configured keepers, not the placed ones: a keeper in a later
             # round has no pick yet, and copying settings needs all of them.
             "keepers": [

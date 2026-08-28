@@ -48,7 +48,9 @@ def config_to_json(config: DraftConfig) -> str:
 def config_from_json(raw: str) -> DraftConfig:
     payload = json.loads(raw)
     keepers = tuple(Keeper(**k) for k in payload.pop("keepers", []))
-    return DraftConfig(keepers=keepers, **payload)
+    # JSON has no tuples, so both of these come back as lists.
+    slots = tuple((str(k), int(v)) for k, v in payload.pop("lineup_slots", []))
+    return DraftConfig(keepers=keepers, lineup_slots=slots, **payload)
 
 
 def log_to_json(log: list[LoggedPick]) -> str:

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from statistics import NormalDist
 
 from .engine import DraftState
+from .lineup import BENCH, FLEX, STARTER, slot_for, starters_remaining
 from .models import Player
 from .order import next_pick_for_slot
 from .rankings import PlayerPool
@@ -32,11 +33,19 @@ WEIGHT_DROPOFF = 1.0    # what you lose by waiting a turn at this position
 WEIGHT_VALUE = 0.6      # has fallen past his own ADP
 BYE_PENALTY = 2.0       # would put a third starter on one bye week
 
-# What a position you have already filled is worth. Low enough that a real
-# need outranks a steeper drop elsewhere, high enough that the option is still
-# offered -- the limits are a plan, and the board does not always cooperate.
-# Divided again by how far past the plan you already are, so a fourth
-# quarterback sinks further than a third.
+# What a pick is worth by where it would go in the lineup. A first running
+# back fills a starting slot; a fifth sits behind four others. Treating them
+# alike was the advisor's biggest blind spot -- position limits say how many
+# you plan to carry, not how many of them play.
+SLOT_WEIGHT = {
+    STARTER: 1.0,   # an empty starting slot is the whole point of the draft
+    FLEX: 0.8,      # still plays, but you have choices for it
+    BENCH: 0.3,     # depth and insurance, worth having but not urgent
+}
+
+# What a position you have already filled beyond your plan is worth. Divided
+# again by how far past it you are, so a fourth quarterback sinks below a
+# third. Applied on top of the slot weight above.
 FILLED_POSITION_WEIGHT = 0.25
 
 # The leading position is the actual decision, so it gets a second name: the
@@ -72,6 +81,8 @@ class Advice:
     survival: float          # chance he is still there at your next pick
     value: float             # picks he has fallen past his ADP; negative is a reach
     need: int                # roster spots you still have at his position
+    slot: str                # starter, flex or bench, were you to take him
+    starters_left: int       # starting slots still to fill anywhere
     bye_clash: bool
     gone_by_next: bool
     dropoff: float           # ADP cost of waiting a turn at this position
@@ -92,6 +103,8 @@ class Advice:
             "survival": round(self.survival, 3),
             "value": round(self.value, 1),
             "need": self.need,
+            "slot": self.slot,
+            "starters_left": self.starters_left,
             "bye_clash": self.bye_clash,
             "gone_by_next": self.gone_by_next,
             "dropoff": round(self.dropoff, 1),
@@ -190,6 +203,7 @@ def _reasons(
     need: int,
     bye_clash: bool,
     until: int | None,
+    slot: str = STARTER,
     behind: Player | None = None,
 ) -> list[str]:
     """What actually bears on this pick, most decisive first.
@@ -202,6 +216,8 @@ def _reasons(
 
     if behind is not None:
         said.append(f"the next {player.position} behind {behind.name}")
+        if slot == BENCH:
+            said.append("bench depth rather than a starter")
         if value >= 5:
             said.append(f"fallen {value:.0f} picks past his own ADP")
         if player.bye_week is not None and behind.bye_week != player.bye_week:
@@ -237,6 +253,13 @@ def _reasons(
 
     if value >= 5:
         said.append(f"fallen {value:.0f} picks past his own ADP")
+
+    if slot == STARTER:
+        said.append(f"fills an empty starting {position} slot")
+    elif slot == FLEX:
+        said.append("would start in your flex")
+    else:
+        said.append("bench depth — your starting lineup is set here")
 
     if need == 1:
         said.append(f"your last {position} spot")
@@ -282,9 +305,13 @@ def recommend(
     if not eligible:
         return []
 
-    needs = state.team(slot).needs(state.config.position_limits)
-    spots_left = max(1, sum(max(0, n) for n in needs.values()))
-    byes = state.team(slot).bye_weeks
+    roster = state.team(slot)
+    needs = roster.needs(state.config.position_limits)
+    byes = roster.bye_weeks
+
+    lineup = state.config.lineup
+    counts = dict(roster.position_counts)
+    starters_left = starters_remaining(lineup, counts)
 
     # Every position is considered. A filled one is weighted down rather than
     # dropped, because the limits are a plan and the board does not always
@@ -301,19 +328,22 @@ def recommend(
             continue
 
         need = needs.get(position, 0)
-        need_share = max(0, need) / spots_left
-        weight = (
-            1.0 + need_share
-            if need > 0
-            else FILLED_POSITION_WEIGHT / (1 + abs(need))
-        )
-        value = now - view.best_now.adp
+        slot = slot_for(lineup, counts, position)
 
+        weight = SLOT_WEIGHT[slot]
+        if slot == STARTER:
+            # An empty starting slot with few left to fill is more pressing
+            # than one of many.
+            weight *= 1.0 + (1.0 / max(1, starters_left))
+        if need <= 0:
+            weight *= FILLED_POSITION_WEIGHT / (1 + abs(need))
+
+        value = now - view.best_now.adp
         score = (
             WEIGHT_DROPOFF * (view.dropoff / 10.0) * weight
             + WEIGHT_VALUE * (max(-VALUE_CAP, min(VALUE_CAP, value)) / 10.0)
         )
-        scored.append((score, view, need))
+        scored.append((score, view, need, slot))
 
     scored.sort(key=lambda row: (-row[0], row[1].best_now.adp))
 
@@ -325,7 +355,7 @@ def recommend(
     chosen = pressing if len(pressing) >= 3 else scored[:3]
 
     advice: list[Advice] = []
-    for rank, (score, view, need) in enumerate(chosen):
+    for rank, (score, view, need, slot_kind) in enumerate(chosen):
         position = view.position
         depth = DEPTH_AT_TOP if rank == 0 else 1
 
@@ -345,6 +375,8 @@ def recommend(
                     survival=survival,
                     value=value,
                     need=need,
+                    slot=slot_kind,
+                    starters_left=starters_left,
                     bye_clash=bye_clash,
                     gone_by_next=survival < 0.25,
                     dropoff=view.dropoff,
@@ -353,6 +385,7 @@ def recommend(
                     tier_remaining=view.tier_remaining,
                     reasons=_reasons(
                         player, view, survival, value, need, bye_clash, until,
+                        slot=slot_kind,
                         behind=view.best_now if offset else None,
                     ),
                 )

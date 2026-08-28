@@ -230,17 +230,20 @@ Good enough to draft with, not tuned. Everything adjustable sits at the top of
 | `WEIGHT_VALUE` | 0.6 | how much falling past his own ADP counts |
 | `VALUE_CAP` | 25 | beyond this, early or late stops meaning anything |
 | `FILLED_POSITION_WEIGHT` | 0.25 | a position already filled, divided again per pick over |
+| `SLOT_WEIGHT` | 1.0 / 0.8 / 0.3 | starter, flex, bench |
 | `DEPTH_AT_TOP` | 2 | names offered at the leading position |
 | `TIER_GAP_FRACTION` / `MIN_TIER_GAP` | 0.35 / 4 | what counts as a tier break |
 | `BYE_PENALTY` | 2.0 | a third starter on one bye |
 
 Known limits, in the order they are worth attacking:
 
-1. **Starters and bench are not distinguished.** The league starts
-   QB/2RB/2WR/TE/2FLEX/K/DEF with five on the bench, but the advisor only sees
-   flat position limits. A first running back is worth far more than a fifth,
-   and nothing currently says so. Sleeper reports the real slots, so the data
-   is already there.
+1. ~~**Starters and bench are not distinguished.**~~ **Done.** `core/lineup.py`
+   models the starting slots, flex eligibility and bench, read from Sleeper's
+   own draft settings for a live board and defaulting to the league's shape
+   otherwise. A pick is weighted by where it would actually go, so a first back
+   fills a starting slot at full weight, a third takes a flex at 0.8, and a
+   fifth is bench depth at 0.3. Draft three quarterbacks and the position stops
+   being offered rather than merely sinking.
 2. **No projections, so no true value over replacement.** Everything derives
    from ADP, which measures what drafters *do* rather than what a player is
    worth. A projections feed would let the score answer "how many points does

@@ -146,6 +146,7 @@ def _serialize(
             "rounds": state.config.rounds,
             "your_slot": your_slot,
             "position_limits": state.config.position_limits,
+            "lineup": state.config.lineup.as_dict(),
         },
         "complete": state.complete,
         "your_turn": state.your_turn,
@@ -246,6 +247,9 @@ def connect(
         teams=info.teams,
         rounds=info.rounds,
         your_slot=body.your_slot,
+        # Sleeper knows the real starting lineup, so it is read rather than
+        # assumed: a first back fills a starting slot, a fifth does not.
+        lineup_slots=tuple(sorted(info.slots.items())),
     )
     try:
         validate_config(draft)

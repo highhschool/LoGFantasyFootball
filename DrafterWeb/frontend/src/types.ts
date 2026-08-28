@@ -129,6 +129,9 @@ export interface Advice {
   /** Picks he has fallen past his ADP; negative is a reach. */
   value: number;
   need: number;
+  /** Where he would go in your lineup. */
+  slot: "starter" | "flex" | "bench";
+  starters_left: number;
   bye_clash: boolean;
   gone_by_next: boolean;
   /** ADP picks lost by waiting a turn at this position. */
