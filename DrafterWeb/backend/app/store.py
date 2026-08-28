@@ -58,6 +58,9 @@ CREATE TABLE IF NOT EXISTS contract_slates (
     slate_id   TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
     kind       TEXT NOT NULL DEFAULT 'weekly',
+    -- 'play' settles to a wallet and feeds the leaderboard; 'real' settles to
+    -- a list of who owes whom. A slate is one or the other for its whole life.
+    stakes     TEXT NOT NULL DEFAULT 'play',
     opens_at   TEXT NOT NULL,
     closes_at  TEXT,
     created_at TEXT NOT NULL
@@ -158,6 +161,10 @@ ADDED_COLUMNS = {
     "pick_seconds": "INTEGER NOT NULL DEFAULT 0",
 }
 
+ADDED_SLATE_COLUMNS = {
+    "stakes": "TEXT NOT NULL DEFAULT 'play'",
+}
+
 ADDED_MANAGER_COLUMNS = {
     "draft_slot": "INTEGER",
     # Sleeper's own avatar hash, synced with the rest of the league. Everyone
@@ -180,6 +187,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for column, spec in ADDED_MANAGER_COLUMNS.items():
         if column not in have:
             conn.execute(f"ALTER TABLE keeper_managers ADD COLUMN {column} {spec}")
+
+    have = {row["name"] for row in conn.execute("PRAGMA table_info(contract_slates)")}
+    for column, spec in ADDED_SLATE_COLUMNS.items():
+        if column not in have:
+            conn.execute(f"ALTER TABLE contract_slates ADD COLUMN {column} {spec}")
 
     _allow_keepers_without_adp(conn)
 
@@ -596,14 +608,19 @@ class SessionStore:
     # ----------------------------------------------------------- contracts
 
     def create_slate(
-        self, name: str, kind: str, opens_at: datetime, closes_at: datetime | None
+        self,
+        name: str,
+        kind: str,
+        opens_at: datetime,
+        closes_at: datetime | None,
+        stakes: str = "play",
     ) -> str:
         slate_id = uuid.uuid4().hex[:12]
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO contract_slates (slate_id, name, kind, opens_at,"
-                " closes_at, created_at) VALUES (?,?,?,?,?,?)",
-                (slate_id, name, kind, opens_at.isoformat(),
+                "INSERT INTO contract_slates (slate_id, name, kind, stakes,"
+                " opens_at, closes_at, created_at) VALUES (?,?,?,?,?,?,?)",
+                (slate_id, name, kind, stakes, opens_at.isoformat(),
                  closes_at.isoformat() if closes_at else None, _now()),
             )
         return slate_id

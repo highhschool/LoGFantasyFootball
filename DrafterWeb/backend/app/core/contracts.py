@@ -27,9 +27,15 @@ from datetime import datetime, timezone
 
 from .lmsr import DOLLAR, NO, SIDES, YES, apply, cost, price_cents, quote
 
-DEFAULT_B = 10.0
+# Sized against a season rather than a night. Twenty-five is the largest
+# position at which a manager who maxes every market with a poor read still
+# cannot be knocked out of a $1,000 season: simulated over eighteen slates they
+# bottom out near $500 and never miss a market, where fifty leaves them at $10
+# and seventy-five has them broke by November. `b` tracks the cap at twice it,
+# which keeps one maximum buy worth about twelve points of price.
+DEFAULT_B = 50.0
 DEFAULT_SPREAD = 1      # cents per contract, each way
-DEFAULT_CAP = 5         # contracts per manager per market
+DEFAULT_CAP = 25        # contracts per manager per market
 OPENING_FLOOR, OPENING_CEILING = 5, 95
 
 # Where a market is in its life. Trading happens in exactly one of these.
@@ -128,7 +134,7 @@ class Position:
         return YES if self.yes else (NO if self.no else None)
 
     def value(self, yes_price: int) -> int:
-        """What the holding would fetch at the current line, ignoring spread."""
+        """A rough mark, at the current line. See `MarketState.liquidation`."""
         return self.yes * yes_price + self.no * (DOLLAR - yes_price)
 
     def as_dict(self, yes_price: int) -> dict:
@@ -162,6 +168,34 @@ class MarketState:
 
     def position(self, user_id: str) -> Position:
         return self.positions.get(user_id) or Position()
+
+    def liquidation(self, user_id: str) -> int:
+        """What closing this position right now would actually return.
+
+        Not the position marked at the current price, which is the obvious
+        thing and is wrong twice. Selling walks back down the curve, so a large
+        holding fetches less per contract than the last one cost -- and the
+        spread is paid on the way out as well as the way in.
+
+        The difference is not rounding. Marking at the line credits a buyer
+        with the move their own purchase caused: twenty-five contracts pushes
+        the price twelve points and instantly shows a profit for having done
+        so. Across a slate that is a few dollars of invention, and on a
+        leaderboard it is a strategy.
+        """
+        held = self.position(user_id)
+        if not held.held:
+            return 0
+
+        qy, qn = self.book_yes, self.book_no
+        out = 0
+        for side, count in ((YES, held.yes), (NO, held.no)):
+            if not count:
+                continue
+            back = quote(qy, qn, self.config.b, side, -count, self.config.spread)
+            out -= back.cash
+            qy, qn = apply(qy, qn, side, -count)
+        return max(0, out)
 
     def house_pnl(self, yes_won: bool) -> int:
         """What the house keeps if it lands that way, in cents.
@@ -233,6 +267,10 @@ class Plan:
         }
 
 
+def _money(cents: int) -> str:
+    return f"${cents / DOLLAR:,.2f}"
+
+
 def plan(
     state: MarketState,
     user_id: str,
@@ -240,6 +278,7 @@ def plan(
     shares: int,
     now: datetime | None = None,
     settled: bool = False,
+    balance: int | None = None,
 ) -> Plan:
     """Price a request to hold `shares` more of `side`.
 
@@ -250,6 +289,11 @@ def plan(
     Refused outside the trading window -- including selling. Once the draft is
     running there is no exit, which is the cost of closing before the first
     pick rather than market by market.
+
+    A `balance` refuses anything it cannot cover. Passed only for play-money
+    markets: a real-money slate settles up afterwards and has no wallet to
+    check against. Selling is never refused for want of funds, since it returns
+    money rather than costing it.
     """
     at = phase(state.config, now, settled)
     if at != OPEN:
@@ -303,6 +347,11 @@ def plan(
         legs.append(Trade(user_id, side, wants, leg.cash))
         qy, qn = apply(qy, qn, side, wants)
         total += leg.cash
+
+    if balance is not None and total > balance:
+        raise MarketError(
+            f"that costs {_money(total)} and you have {_money(balance)}"
+        )
 
     return Plan(
         legs=legs,

@@ -95,10 +95,13 @@ def _moment(name: str) -> "datetime | None":
 CONTRACTS_OPEN = _moment("CONTRACTS_OPEN")
 CONTRACTS_CLOSE = _moment("CONTRACTS_CLOSE")
 
-# Contracts a manager may hold in any one market. Five caps the payout at $5,
-# which is what keeps this friendly.
-CONTRACTS_CAP = int(os.getenv("CONTRACTS_CAP", "5"))
-CONTRACTS_B = float(os.getenv("CONTRACTS_B", "10"))
+# Contracts a manager may hold in any one market, and the liquidity that
+# matches it. See core/contracts.py for why twenty-five.
+CONTRACTS_CAP = int(os.getenv("CONTRACTS_CAP", "25"))
+CONTRACTS_B = float(os.getenv("CONTRACTS_B", "50"))
+
+# What every manager starts a season with on a play-money slate, in cents.
+CONTRACTS_START = int(os.getenv("CONTRACTS_START", "100000"))
 CONTRACTS_SPREAD = int(os.getenv("CONTRACTS_SPREAD", "1"))
 
 SLEEPER_API = os.getenv("SLEEPER_API", "https://api.sleeper.app/v1")

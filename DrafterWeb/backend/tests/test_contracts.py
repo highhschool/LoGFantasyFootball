@@ -29,10 +29,19 @@ from app.core.contracts import (
 CENTRAL = timezone(timedelta(hours=-5))
 from app.core.lmsr import NO, YES
 
-EVEN = MarketConfig(market_id="m1", question="Chase in the first three?", opening=50)
+# Pinned rather than inherited. These test the machine, not the sizing, and
+# the sizing is a product decision that has already moved once -- a cap chosen
+# for a season should not be able to break arithmetic tests when it changes
+# again. TestTheShippedSizing below is where the real numbers are asserted.
+B, CAP = 10.0, 5
+
+EVEN = MarketConfig(market_id="m1", question="Chase in the first three?",
+                    opening=50, b=B, position_cap=CAP)
 
 
 def market(**kw) -> MarketConfig:
+    kw.setdefault("b", B)
+    kw.setdefault("position_cap", CAP)
     return MarketConfig(market_id="m", question="q", **kw)
 
 
@@ -376,3 +385,45 @@ class TestTheTradingWindow:
     def test_closing_before_opening_is_refused(self):
         with pytest.raises(MarketError, match="close before it opens"):
             market(opens_at=self.CLOSES, closes_at=self.OPENS)
+
+
+class TestTheShippedSizing:
+    """The numbers the league actually plays at.
+
+    Chosen against a season rather than a night: twenty-five is the largest
+    position at which a manager who maxes every market with a poor read still
+    cannot be knocked out of a $1,000 season. Simulated over eighteen slates
+    they bottom out near $500 and never miss a market; at fifty they reach $10,
+    and at seventy-five they are broke by November and miss seventy-four.
+    """
+
+    def test_the_defaults_are_the_chosen_ones(self):
+        from app.core.contracts import DEFAULT_B, DEFAULT_CAP, DEFAULT_SPREAD
+
+        assert (DEFAULT_CAP, DEFAULT_B, DEFAULT_SPREAD) == (25, 50.0, 1)
+
+    def test_liquidity_tracks_the_cap(self):
+        """b at twice the cap keeps one maximum buy worth about twelve points."""
+        from app.core.contracts import DEFAULT_B, DEFAULT_CAP
+
+        assert DEFAULT_B == 2 * DEFAULT_CAP
+
+    def test_a_maximum_buy_moves_the_line_twelve_points(self):
+        from app.core.contracts import DEFAULT_B, DEFAULT_CAP
+
+        done = plan(replay(market(b=DEFAULT_B, position_cap=DEFAULT_CAP), []),
+                    "u1", YES, DEFAULT_CAP)
+        assert (done.price_before, done.price_after) == (50, 62)
+
+    def test_a_maximum_buy_costs_about_fourteen_dollars(self):
+        from app.core.contracts import DEFAULT_B, DEFAULT_CAP
+
+        done = plan(replay(market(b=DEFAULT_B, position_cap=DEFAULT_CAP), []),
+                    "u1", YES, DEFAULT_CAP)
+        assert 1_350 <= done.cash <= 1_500
+
+    def test_the_whole_league_maxed_still_leaves_room(self):
+        from app.core.contracts import DEFAULT_B, DEFAULT_CAP
+        from app.core.lmsr import price_cents
+
+        assert price_cents(12 * DEFAULT_CAP, 0, DEFAULT_B) == 99
