@@ -13,10 +13,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config
-from .api import assistant, sessions
+from .api import admin, assistant, sessions
 from .core.models import DraftConfig, RankingsError
 from .core.order import build_board, picks_for_slot
 from .core import adp
@@ -195,9 +196,27 @@ def board(
 
 app.include_router(sessions.router)
 app.include_router(assistant.router)
+app.include_router(admin.router)
+
+
+_STATIC = Path(__file__).parent / "static"
+
+
+@app.get("/admin", include_in_schema=False)
+def admin_page():
+    """The owner's view.
+
+    A separate page rather than a route inside the app, so Cloudflare Access
+    can be scoped to this path without touching the public site. Access must
+    cover /api/admin too -- guarding the page alone would leave the data open
+    while looking protected.
+    """
+    page = _STATIC / "admin.html"
+    if not page.is_file():
+        raise HTTPException(status_code=404, detail="Not Found")
+    return FileResponse(page)
 
 
 # Mounted last so it never shadows /api.
-_STATIC = Path(__file__).parent / "static"
 if _STATIC.is_dir():
     app.mount("/", StaticFiles(directory=_STATIC, html=True), name="static")

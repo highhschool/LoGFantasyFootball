@@ -57,9 +57,17 @@ SLEEPER_LEAGUE_ID = os.getenv("SLEEPER_LEAGUE_ID", "")
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
-# Gates the admin-only rankings reload. The site is public, so this endpoint
-# fails closed: with no token set it is not reachable at all.
+# Gates the admin-only routes. The site is public, so they fail closed: with
+# neither of these set, nothing admin is reachable at all.
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+
+# Addresses Cloudflare Access may admit to the admin view. Access verifies the
+# identity; this decides which verified identity is the site owner.
+ADMIN_EMAILS = {
+    email.strip().lower()
+    for email in os.getenv("ADMIN_EMAILS", "").split(",")
+    if email.strip()
+}
 
 # Comma-separated. The tunnel terminates TLS and forwards to the API, so in
 # production this is the real hostname.

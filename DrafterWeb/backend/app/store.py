@@ -7,6 +7,7 @@ payoff of deriving everything else at read time.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import uuid
@@ -33,6 +34,15 @@ CREATE TABLE IF NOT EXISTS sessions (
     updated_at  TEXT NOT NULL
 );
 """
+
+
+def _owner_digest(owner_id: str) -> str:
+    """A short, stable label for an owner that is not the owner's own key."""
+    if not owner_id:
+        return "unclaimed"
+    if owner_id.startswith("email:"):
+        return owner_id.split(":", 1)[1]
+    return hashlib.sha256(owner_id.encode()).hexdigest()[:8]
 
 
 def _now() -> str:
@@ -123,8 +133,10 @@ class SessionStore:
                 "SELECT * FROM sessions WHERE id = ? AND owner_id = ?",
                 (session_id, owner_id),
             ).fetchone()
-        if row is None:
-            return None
+        return None if row is None else self._row_to_session(row)
+
+    @staticmethod
+    def _row_to_session(row: sqlite3.Row) -> dict:
         return {
             "id": row["id"],
             "name": row["name"],
@@ -196,6 +208,53 @@ class SessionStore:
             }
             for r in rows
         ]
+
+    def list_all(self, mode: str | None = None, limit: int = 200) -> list[dict]:
+        """Every session, whoever made it. Admin only.
+
+        Owners are reported as a short digest rather than the raw id: it is
+        enough to tell two people apart in the listing, and the raw value is a
+        bearer token for their sessions.
+        """
+        sql = (
+            "SELECT id, name, mode, owner_id, source_id, created_at, updated_at,"
+            " log_json, config_json FROM sessions"
+        )
+        params: list[object] = []
+        if mode is not None:
+            sql += " WHERE mode = ?"
+            params.append(mode)
+        sql += " ORDER BY updated_at DESC LIMIT ?"
+        params.append(limit)
+
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+
+        out = []
+        for r in rows:
+            config = config_from_json(r["config_json"])
+            out.append({
+                "id": r["id"],
+                "name": r["name"],
+                "mode": r["mode"],
+                "owner": _owner_digest(r["owner_id"]),
+                "teams": config.teams,
+                "rounds": config.rounds,
+                "your_slot": config.your_slot,
+                "keepers": len(config.keepers),
+                "picks_made": len(json.loads(r["log_json"])),
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"],
+            })
+        return out
+
+    def load_any(self, session_id: str) -> dict | None:
+        """Load regardless of owner. Admin only."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+        return None if row is None else self._row_to_session(row)
 
     def delete(self, session_id: str, owner_id: str) -> bool:
         with self._connect() as conn:

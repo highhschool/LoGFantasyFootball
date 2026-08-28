@@ -249,6 +249,38 @@ enforceable, with no migration.
 proxies Sleeper and returns only what the board needs. No response ever contains
 the league ID, and managers appear under their team names.
 
+### The owner's view (`/admin`)
+
+Every session, whoever made it, read-only, at <https://ngfldrafter.com/admin>.
+The public site stays public; only this path is guarded.
+
+**Set it up in Cloudflare Zero Trust → Access → Applications → Self-hosted:**
+
+| Field | Value |
+|---|---|
+| Application name | `NGFL Drafter admin` |
+| Domain | `ngfldrafter.com` |
+| Path | `admin` |
+| Policy | **Allow**, selector **Emails**, your address only |
+
+Then **add a second application on the same domain with path `api/admin`**, same
+policy.
+
+> **Both paths, or neither.** Access guards by path. Protecting the page alone
+> leaves the data behind it open to anyone who requests `/api/admin/sessions`
+> directly — worse than no guard at all, because it looks protected.
+
+`ADMIN_EMAILS` in `.env` decides which verified address is the owner. Access
+proves who you are; that list decides who that entitles. Both must agree.
+
+`ADMIN_TOKEN` also opens it, via an `X-Admin-Token` header, so the view works
+locally and before Access is configured. With neither set, every admin route
+404s.
+
+Read-only by design: it lists and opens boards, and there is a test asserting
+no route on it accepts anything but GET. Being the owner grants nothing on the
+ordinary session routes — those stay scoped to the browser that made them.
+
 ### Optional: locking it down later (Cloudflare Access)
 
 Not currently applied. Worth knowing that Access can protect a **path** rather

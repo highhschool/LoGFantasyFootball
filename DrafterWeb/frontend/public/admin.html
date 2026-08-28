@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NGFL Drafter — sessions</title>
+<style>
+  :root {
+    --ground: #f4f7f5; --surface: #fff; --raised: #eaf0ec; --ink: #16201c;
+    --ink-2: #566159; --ink-3: #7c8781; --rule: #dbe3dd; --accent: #1c6b48;
+    --danger: #9b2c2c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0e1412; --surface: #151d1a; --raised: #1c2622; --ink: #e7ede9;
+      --ink-2: #9daaa3; --ink-3: #75837c; --rule: #25302b; --accent: #6cc095;
+      --danger: #e08585;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; padding: 1.5rem; background: var(--ground); color: var(--ink);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 72rem; margin: 0 auto; display: flex; flex-direction: column; gap: 1.25rem; }
+  h1 { margin: 0; font-size: 1.5rem; letter-spacing: -0.01em; }
+  .sub { margin: 0.25rem 0 0; color: var(--ink-2); font-size: 0.9rem; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  button {
+    font: inherit; font-size: 0.85rem; padding: 0.35rem 0.7rem; border-radius: 6px;
+    border: 1px solid var(--rule); background: var(--raised); color: var(--ink);
+    cursor: pointer; min-height: 34px;
+  }
+  button[aria-pressed="true"] { background: var(--accent); color: var(--ground); border-color: transparent; }
+  .wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  th { background: var(--raised); color: var(--ink-3); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: var(--raised); }
+  .num { font-variant-numeric: tabular-nums; text-align: right; }
+  .muted { color: var(--ink-3); }
+  .err { color: var(--danger); }
+  details { border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+  summary { padding: 0.6rem 0.9rem; cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+  .board { padding: 0 0.9rem 0.9rem; overflow-x: auto; }
+  .board table { font-size: 0.78rem; }
+  .board td, .board th { white-space: nowrap; padding: 0.3rem 0.5rem; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Sessions</h1>
+    <p class="sub" id="who">Checking access…</p>
+  </header>
+
+  <div class="bar">
+    <button data-mode="" aria-pressed="true">All</button>
+    <button data-mode="mock" aria-pressed="false">Mock drafts</button>
+    <button data-mode="assistant" aria-pressed="false">Live drafts</button>
+    <span class="muted" id="summary" style="margin-left:auto"></span>
+  </div>
+
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th><th>Tool</th><th>Owner</th>
+          <th class="num">Picks</th><th class="num">Teams</th>
+          <th class="num">Slot</th><th class="num">Keepers</th>
+          <th>Updated</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="rows"><tr><td colspan="9" class="muted">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div id="detail"></div>
+</main>
+
+<script>
+  let mode = "";
+
+  const fmt = (iso) => {
+    try { return new Date(iso).toLocaleString(); } catch { return iso; }
+  };
+
+  async function load() {
+    const rows = document.getElementById("rows");
+    try {
+      const url = "/api/admin/sessions" + (mode ? `?mode=${mode}` : "");
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      document.getElementById("summary").textContent =
+        `${data.count} session${data.count === 1 ? "" : "s"} · ${data.owners} owner${data.owners === 1 ? "" : "s"}`;
+
+      if (!data.sessions.length) {
+        rows.innerHTML = '<tr><td colspan="9" class="muted">Nothing yet.</td></tr>';
+        return;
+      }
+
+      rows.innerHTML = data.sessions.map((s) => `
+        <tr>
+          <td>${escape(s.name || s.id)}</td>
+          <td class="muted">${s.mode === "mock" ? "mock" : "live"}</td>
+          <td class="muted">${escape(s.owner)}</td>
+          <td class="num">${s.picks_made}</td>
+          <td class="num">${s.teams}</td>
+          <td class="num">${s.your_slot}</td>
+          <td class="num">${s.keepers || ""}</td>
+          <td class="muted">${fmt(s.updated_at)}</td>
+          <td><button data-open="${s.id}">Board</button></td>
+        </tr>`).join("");
+    } catch (e) {
+      rows.innerHTML = `<tr><td colspan="9" class="err">Could not load: ${escape(String(e))}</td></tr>`;
+    }
+  }
+
+  async function openBoard(id) {
+    const target = document.getElementById("detail");
+    target.innerHTML = '<p class="muted">Loading board…</p>';
+    try {
+      const res = await fetch(`/api/admin/sessions/${id}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const d = await res.json();
+
+      const slots = Object.keys(d.rosters).map(Number).sort((a, b) => a - b);
+      const head = slots.map((s) =>
+        `<th>${s === d.config.your_slot ? "Slot " + s + " (theirs)" : "Slot " + s}</th>`).join("");
+
+      const rounds = [];
+      for (let r = 1; r <= d.config.rounds; r++) {
+        const cells = slots.map((s) => {
+          const pick = (d.rosters[s] || []).find((p) => p.round === r);
+          return `<td>${pick ? escape(pick.position + " " + pick.player_name) : ""}</td>`;
+        }).join("");
+        rounds.push(`<tr><td class="muted">${r}</td>${cells}</tr>`);
+      }
+
+      target.innerHTML = `
+        <details open>
+          <summary>${escape(d.name || d.id)} — ${d.picks.length} picks${d.complete ? ", complete" : ""}</summary>
+          <div class="board">
+            <table>
+              <thead><tr><th>Rd</th>${head}</tr></thead>
+              <tbody>${rounds.join("")}</tbody>
+            </table>
+          </div>
+        </details>`;
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (e) {
+      target.innerHTML = `<p class="err">Could not load board: ${escape(String(e))}</p>`;
+    }
+  }
+
+  function escape(s) {
+    return String(s).replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  document.addEventListener("click", (e) => {
+    const tab = e.target.closest("[data-mode]");
+    if (tab) {
+      mode = tab.dataset.mode;
+      document.querySelectorAll("[data-mode]").forEach((b) =>
+        b.setAttribute("aria-pressed", String(b === tab)));
+      load();
+    }
+    const open = e.target.closest("[data-open]");
+    if (open) openBoard(open.dataset.open);
+  });
+
+  fetch("/api/admin/whoami")
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    .then((d) => {
+      document.getElementById("who").textContent = `Signed in as ${d.admin}. Read-only.`;
+    })
+    .catch(() => {
+      document.getElementById("who").innerHTML =
+        '<span class="err">Not recognised as the site owner.</span> ' +
+        'Check the Cloudflare Access policy covers /admin and /api/admin, and that ' +
+        'ADMIN_EMAILS lists your address.';
+    });
+
+  load();
+</script>
+</body>
+</html>
