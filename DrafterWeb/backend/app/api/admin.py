@@ -160,7 +160,7 @@ def keeper_sync(
     store: SessionStore = Depends(get_store),
     client: SleeperClient = Depends(get_client),
 ) -> dict:
-    """Pull the league's members from Sleeper, minting codes for anyone new."""
+    """Pull the league's members and draft order, minting codes for anyone new."""
     require_admin(request)
 
     league = app_config.SLEEPER_LEAGUE_ID
@@ -172,7 +172,15 @@ def keeper_sync(
     except SleeperError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    # The order is discovered from whichever draft is current, and is missing
+    # until the commissioner sets one. That is a normal pre-draft state, so a
+    # league without an order still syncs -- it just lists by name.
+    try:
+        order = client.latest_draft(league).draft_order
+    except SleeperError:
+        order = {}
+
     result = store.sync_managers(
-        [(m.user_id, m.display_name, m.team_name) for m in managers]
+        [(m.user_id, m.display_name, m.team_name) for m in managers], order
     )
     return {"managers": len(managers), **result}

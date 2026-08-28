@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -49,6 +49,9 @@ class DraftInfo:
     slot_to_roster: dict[int, int]
     # Raw slot counts, so the lineup can be read rather than assumed.
     slots: dict[str, int]
+    # Which manager picks where, by Sleeper user id. Empty until the
+    # commissioner sets an order, which is a normal pre-draft state.
+    draft_order: dict[str, int] = field(default_factory=dict)
 
     @property
     def is_snake(self) -> bool:
@@ -120,6 +123,9 @@ def parse_draft(payload: dict) -> DraftInfo:
         rounds=_as_int(settings.get("rounds")),
         slot_to_roster={_as_int(k): _as_int(v) for k, v in raw_slots.items()},
         slots={k: v for k, v in settings.items() if k.startswith("slots_")},
+        draft_order={
+            str(k): _as_int(v) for k, v in (payload.get("draft_order") or {}).items()
+        },
     )
 
 

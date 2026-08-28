@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from app import config as app_config
 from app import main
-from app.integrations.sleeper import Manager
+from app.integrations.sleeper import DraftInfo, Manager
 from app.store import SessionStore
 
 LEAGUE = "test-league"
@@ -34,6 +34,15 @@ def fake_sleeper(tmp_path, pool_2025):
                 Manager(user_id="u1", display_name="brayden", team_name="Team Phoenix"),
                 Manager(user_id="u2", display_name="jed", team_name="Slamwich"),
             ]
+
+        def latest_draft(self, league_id):
+            # u2 picks first, so draft order is not the order of anything else
+            # here -- alphabetical, roster, or insertion.
+            return DraftInfo(
+                draft_id="d1", status="pre_draft", draft_type="snake",
+                season="2025", teams=2, rounds=15, slot_to_roster={},
+                slots={}, draft_order={"u2": 1, "u1": 2},
+            )
 
         def league_rosters(self, league_id):
             return {
@@ -474,3 +483,153 @@ class TestManagersLeavingTheLeague:
                 json={"user_id": "u2", "code": synced["u2"]["code"]},
             )
         assert r.status_code == 403, "their code must stop working"
+
+
+class TestDraftOrder:
+    """Sleeper knows who picks where, and the keeper board reads down slots.
+
+    Draft night is worked slot by slot, so the order the league thinks in is
+    the order these listings use.
+    """
+
+    def test_the_order_is_stored_on_sync(self, app, synced):
+        assert synced["u2"]["draft_slot"] == 1
+        assert synced["u1"]["draft_slot"] == 2
+
+    def test_sync_reports_how_many_have_a_slot(self, app, synced):
+        with TestClient(app) as owner:
+            again = owner.post("/api/admin/keepers/sync", headers=ADMIN).json()
+        assert again["ordered"] == 2
+
+    def test_managers_list_in_draft_order(self, app, synced):
+        """Not alphabetically: u2 is 'jed', who would otherwise come second."""
+        with TestClient(app) as anyone:
+            listed = anyone.get("/api/keeper/managers").json()["managers"]
+        assert [m["user_id"] for m in listed] == ["u2", "u1"]
+
+    def test_the_owner_board_is_in_draft_order(self, app, synced):
+        with TestClient(app) as owner:
+            rows = owner.get("/api/admin/keepers", headers=ADMIN).json()["keepers"]
+        assert [r["draft_slot"] for r in rows] == [1, 2]
+
+    def test_a_league_with_no_order_set_still_syncs(self, app, monkeypatch):
+        """A pre-draft league without an order is normal, not an error."""
+        from app.integrations.sleeper import SleeperError
+
+        def unset(league_id):
+            raise SleeperError("no drafts yet")
+
+        monkeypatch.setattr(main._sleeper, "latest_draft", unset)
+        with TestClient(app) as owner:
+            result = owner.post("/api/admin/keepers/sync", headers=ADMIN).json()
+            listed = owner.get("/api/admin/keepers/codes", headers=ADMIN).json()["managers"]
+
+        assert result["added"] == 2
+        assert result["ordered"] == 0
+        assert all(m["draft_slot"] is None for m in listed)
+        # And falls back to names rather than to whatever order SQLite likes.
+        assert [m["display_name"] for m in listed] == ["brayden", "jed"]
+
+
+class TestImportingIntoAMockDraft:
+    """The mock draft needs a slot and a round for each keeper.
+
+    The board has the round; the draft order supplies the slot.
+    """
+
+    def _chosen(self, client, manager):
+        claim(client, manager)
+        option = next(
+            o for o in client.get("/api/keeper/roster").json()["options"] if o["ranked"]
+        )
+        client.post("/api/keeper/pick", json={"player_key": option["key"]})
+        return option
+
+    def test_it_pairs_the_slot_with_the_round(self, app, synced):
+        with TestClient(app) as c:
+            picked = self._chosen(c, synced["u1"])
+
+        with TestClient(app) as owner:
+            data = owner.get("/api/keeper/import", headers=ADMIN).json()
+
+        assert len(data["keepers"]) == 1
+        entry = data["keepers"][0]
+        assert entry["team_slot"] == 2, "u1 drafts second"
+        assert entry["round"] == picked["round"]
+        assert entry["player_name"] == picked["name"]
+        assert entry["manager"] == "brayden"
+
+    def test_it_says_who_has_not_chosen(self, app, synced):
+        """An import that lands eleven of twelve has to say which one is missing."""
+        with TestClient(app) as c:
+            self._chosen(c, synced["u1"])
+
+        with TestClient(app) as owner:
+            data = owner.get("/api/keeper/import", headers=ADMIN).json()
+
+        assert data["waiting"] == ["jed"]
+        assert data["managers"] == 2
+
+    def test_the_import_is_in_draft_order(self, app, synced):
+        with TestClient(app) as a, TestClient(app) as b:
+            self._chosen(a, synced["u1"])
+            self._chosen(b, synced["u2"])
+
+        with TestClient(app) as owner:
+            keepers = owner.get("/api/keeper/import", headers=ADMIN).json()["keepers"]
+
+        assert [k["team_slot"] for k in keepers] == [1, 2]
+
+    def test_nobody_may_import_before_the_deadline(self, app, synced):
+        """Otherwise it publishes every pick through the door /board closes."""
+        with TestClient(app) as c:
+            self._chosen(c, synced["u1"])
+
+        with TestClient(app) as anyone:
+            data = anyone.get("/api/keeper/import").json()
+
+        assert data["open"] is True
+        assert data["visible"] is False
+        assert data["keepers"] == []
+
+    def test_the_owner_may_import_before_the_deadline(self, app, synced):
+        with TestClient(app) as c:
+            self._chosen(c, synced["u1"])
+
+        with TestClient(app) as owner:
+            data = owner.get("/api/keeper/import", headers=ADMIN).json()
+
+        assert data["visible"] is True
+        assert len(data["keepers"]) == 1
+
+    def test_everyone_may_import_once_the_deadline_passes(self, app, synced, monkeypatch):
+        with TestClient(app) as c:
+            self._chosen(c, synced["u1"])
+
+        monkeypatch.setattr(
+            app_config, "KEEPER_DEADLINE",
+            datetime.now(timezone.utc) - timedelta(minutes=1),
+        )
+        with TestClient(app) as anyone:
+            data = anyone.get("/api/keeper/import").json()
+
+        assert data["visible"] is True
+        assert len(data["keepers"]) == 1
+
+    def test_a_manager_with_no_slot_is_reported_not_dropped(self, app, synced, monkeypatch):
+        """Importing them at slot None would land a keeper on the wrong team."""
+        from app.integrations.sleeper import SleeperError
+
+        with TestClient(app) as c:
+            self._chosen(c, synced["u1"])
+
+        monkeypatch.setattr(
+            main._sleeper, "latest_draft",
+            lambda league_id: (_ for _ in ()).throw(SleeperError("order cleared")),
+        )
+        with TestClient(app) as owner:
+            owner.post("/api/admin/keepers/sync", headers=ADMIN)
+            data = owner.get("/api/keeper/import", headers=ADMIN).json()
+
+        assert data["keepers"] == []
+        assert data["unordered"] == ["brayden"]

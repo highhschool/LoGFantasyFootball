@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS keeper_managers (
     team_name    TEXT NOT NULL DEFAULT '',
     code         TEXT NOT NULL,
     claimed_by   TEXT NOT NULL DEFAULT '',
-    claimed_at   TEXT
+    claimed_at   TEXT,
+    draft_slot   INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS keeper_picks (
@@ -114,12 +115,21 @@ ADDED_COLUMNS = {
     "pick_seconds": "INTEGER NOT NULL DEFAULT 0",
 }
 
+ADDED_MANAGER_COLUMNS = {
+    "draft_slot": "INTEGER",
+}
+
 
 def _migrate(conn: sqlite3.Connection) -> None:
     have = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
     for column, spec in ADDED_COLUMNS.items():
         if column not in have:
             conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} {spec}")
+
+    have = {row["name"] for row in conn.execute("PRAGMA table_info(keeper_managers)")}
+    for column, spec in ADDED_MANAGER_COLUMNS.items():
+        if column not in have:
+            conn.execute(f"ALTER TABLE keeper_managers ADD COLUMN {column} {spec}")
 
     _allow_keepers_without_adp(conn)
 
@@ -280,7 +290,11 @@ class SessionStore:
 
     # ------------------------------------------------------------- keepers
 
-    def sync_managers(self, managers: list[tuple[str, str, str]]) -> dict:
+    def sync_managers(
+        self,
+        managers: list[tuple[str, str, str]],
+        order: dict[str, int] | None = None,
+    ) -> dict:
         """Reconcile the stored members with the league's.
 
         Existing codes are left alone -- re-syncing must never invalidate one
@@ -290,6 +304,7 @@ class SessionStore:
         twelve-team league offering fourteen names to choose from.
         """
         incoming = {user_id for user_id, _, _ in managers}
+        slots = order or {}
         added = 0
 
         with self._connect() as conn:
@@ -299,15 +314,16 @@ class SessionStore:
                 ).fetchone()
                 if existing:
                     conn.execute(
-                        "UPDATE keeper_managers SET display_name = ?, team_name = ?"
-                        " WHERE user_id = ?",
-                        (display_name, team_name, user_id),
+                        "UPDATE keeper_managers SET display_name = ?, team_name = ?,"
+                        " draft_slot = ? WHERE user_id = ?",
+                        (display_name, team_name, slots.get(user_id), user_id),
                     )
                 else:
                     conn.execute(
                         "INSERT INTO keeper_managers (user_id, display_name,"
-                        " team_name, code) VALUES (?,?,?,?)",
-                        (user_id, display_name, team_name, _new_code()),
+                        " team_name, code, draft_slot) VALUES (?,?,?,?,?)",
+                        (user_id, display_name, team_name, _new_code(),
+                         slots.get(user_id)),
                     )
                     added += 1
 
@@ -320,13 +336,19 @@ class SessionStore:
                 conn.execute("DELETE FROM keeper_picks WHERE user_id = ?", (user_id,))
                 conn.execute("DELETE FROM keeper_managers WHERE user_id = ?", (user_id,))
 
-        return {"added": added, "removed": len(departed), "total": len(incoming)}
+        return {
+            "added": added,
+            "removed": len(departed),
+            "total": len(incoming),
+            "ordered": sum(1 for u in incoming if slots.get(u)),
+        }
 
     def managers(self, with_codes: bool = False) -> list[dict]:
         """The league's members. Codes are admin-only."""
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM keeper_managers ORDER BY"
+                "SELECT * FROM keeper_managers"
+                " ORDER BY draft_slot IS NULL, draft_slot,"
                 " CASE WHEN display_name = '' THEN team_name ELSE display_name END"
             ).fetchall()
 
@@ -336,6 +358,7 @@ class SessionStore:
                 "user_id": r["user_id"],
                 "display_name": r["display_name"],
                 "team_name": r["team_name"],
+                "draft_slot": r["draft_slot"],
                 "claimed": bool(r["claimed_by"]),
             }
             if with_codes:
@@ -411,20 +434,24 @@ class SessionStore:
         return None if row is None else dict(row)
 
     def all_keepers(self) -> list[dict]:
-        """Every manager and their selection, cheapest round first.
+        """Every manager and their selection, in draft order.
 
         Managers who have not chosen are included with nulls, because who has
         not answered yet is the thing you actually want to know before a
-        deadline.
+        deadline. Ordering follows the draft rather than the price: the board
+        is read down the slots on draft night, and a manager with no order yet
+        sorts to the end rather than silently to the top.
         """
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT m.user_id, m.display_name, m.team_name,"
+                "SELECT m.user_id, m.display_name, m.team_name, m.draft_slot,"
                 " k.player_name, k.position, k.nfl_team, k.adp, k.round,"
                 " k.submitted_at, k.updated_at"
                 " FROM keeper_managers m LEFT JOIN keeper_picks k"
                 " ON m.user_id = k.user_id"
-                " ORDER BY k.round IS NULL, k.round, k.adp"
+                " ORDER BY m.draft_slot IS NULL, m.draft_slot,"
+                " CASE WHEN m.display_name = '' THEN m.team_name"
+                " ELSE m.display_name END"
             ).fetchall()
         return [dict(r) for r in rows]
 

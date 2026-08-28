@@ -211,6 +211,28 @@ export interface KeeperOption {
   keepable: boolean;
 }
 
+/** One league keeper, ready to drop into a mock draft's keeper list. */
+export interface KeeperImport {
+  team_slot: number;
+  round: number;
+  player_name: string;
+  manager: string;
+  position: string;
+  adp: number | null;
+}
+
+export interface KeeperImportResult {
+  open: boolean;
+  /** False while selections are open and you are not the owner. */
+  visible: boolean;
+  managers: number;
+  /** Managers who have not chosen yet. */
+  waiting: string[];
+  /** Managers Sleeper has given no draft slot, so they cannot be placed. */
+  unordered: string[];
+  keepers: KeeperImport[];
+}
+
 export interface KeeperState {
   open: boolean;
   deadline: string | null;

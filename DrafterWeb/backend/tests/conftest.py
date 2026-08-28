@@ -71,3 +71,41 @@ def rankings_dir_2025(ffc_2025, tmp_path_factory) -> Path:
 @pytest.fixture(scope="session")
 def pool_2025(rankings_dir_2025):
     return load_pool(rankings_dir_2025, 2025)
+
+
+@pytest.fixture(autouse=True)
+def refuse_real_http(monkeypatch, request):
+    """Fail loudly on any real HTTP call.
+
+    A route that quietly reaches Sleeper because a fake is missing a method
+    still passes -- it just fetches nothing, slowly, and the test proves less
+    than it claims. Adding draft order to the keeper sync did exactly that and
+    doubled the suite's runtime before anyone noticed.
+
+    Named for what it does and not `no_network`, which test_adp.py already
+    uses for a simulated outage: an autouse fixture in here shadowed by a
+    same-named local one applies the local one everywhere, which is a strange
+    way to break four unrelated tests.
+
+    Mark a test `@pytest.mark.network` to opt out.
+    """
+    if request.node.get_closest_marker("network"):
+        return
+
+    import urllib.request
+
+    import httpx
+
+    def refuse(url, *args, **kwargs):
+        target = getattr(url, "full_url", url)
+        raise AssertionError(
+            f"test tried to reach the network: {target}\n"
+            "Give the fake client the method being called, or mark the test "
+            "with @pytest.mark.network."
+        )
+
+    # Both libraries: the ADP client fetches through urllib and the Sleeper
+    # client through httpx, so blocking one leaves half the app free to dial
+    # out -- which is how the keeper sync went unnoticed.
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+    monkeypatch.setattr(httpx, "get", refuse)

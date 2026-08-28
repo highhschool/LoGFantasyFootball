@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from .. import config as app_config
+from ..admin import is_admin
 from ..core.keepers import roster_options
 from ..core.rankings import PlayerPool
 from ..integrations.sleeper import SleeperClient, SleeperError
@@ -250,6 +251,54 @@ def unpick(
     manager = require_claim(store, owner)
     store.clear_keeper(manager["user_id"])
     return {"cleared": True}
+
+
+@router.get("/import")
+def draft_import(
+    request: Request,
+    store: SessionStore = Depends(get_store),
+) -> dict:
+    """The league's keepers as a mock draft's keeper list.
+
+    A mock draft needs a team slot and a round, which the keeper board only
+    half knows: it has the round, and the draft order supplies the slot. Both
+    have to be there for a row to be importable, so a manager with no slot is
+    reported rather than dropped -- an import that silently lands eleven of
+    twelve keepers is worse than one that says why.
+
+    Gated exactly like the board. Importing everyone's keeper before the
+    deadline would publish the selections through the side door the board
+    exists to close, so until then only the owner may.
+    """
+    visible = not is_open() or is_admin(request)
+    rows = store.all_keepers()
+
+    keepers, waiting, unordered = [], [], []
+    for row in rows:
+        who = row["display_name"] or row["team_name"] or row["user_id"]
+        if not row["player_name"]:
+            waiting.append(who)
+        elif row["draft_slot"] is None:
+            unordered.append(who)
+        else:
+            keepers.append({
+                "team_slot": row["draft_slot"],
+                "round": row["round"],
+                "player_name": row["player_name"],
+                "manager": who,
+                "position": row["position"],
+                "adp": row["adp"],
+            })
+
+    keepers.sort(key=lambda k: (k["team_slot"], k["round"]))
+    return {
+        "open": is_open(),
+        "visible": visible,
+        "managers": len(rows),
+        "waiting": waiting,
+        "unordered": unordered,
+        "keepers": keepers if visible else [],
+    }
 
 
 @router.get("/board")

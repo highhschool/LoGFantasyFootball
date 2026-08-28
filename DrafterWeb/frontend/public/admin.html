@@ -167,12 +167,13 @@
         <table>
           <thead>
             <tr>
-              <th>Manager</th><th>Team</th><th class="codes-col">Code</th>
+              <th class="num">Slot</th><th>Manager</th><th>Team</th>
+              <th class="codes-col">Code</th>
               <th>Keeper</th><th class="num">ADP</th><th class="num">Round</th>
               <th>Chosen</th>
             </tr>
           </thead>
-          <tbody id="keeper-rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+          <tbody id="keeper-rows"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -436,7 +437,7 @@
         `${board.chosen} of ${board.total} chosen`;
 
       if (!board.keepers.length) {
-        rows.innerHTML = '<tr><td colspan="7" class="muted">No managers yet — sync the league.</td></tr>';
+        rows.innerHTML = '<tr><td colspan="8" class="muted">No managers yet — sync the league.</td></tr>';
         return;
       }
 
@@ -445,6 +446,7 @@
         const claimed = m.claimed ? "yes" : "not yet";
         return `
         <tr>
+          <td class="num">${k.draft_slot ?? "—"}</td>
           <td>${escape(k.display_name || "—")}</td>
           <td class="muted">${escape(k.team_name || "")}</td>
           <td class="codes-col"><code>${escape(m.code || "")}</code> <span class="muted">${claimed}</span></td>
@@ -457,7 +459,7 @@
         </tr>`;
       }).join("");
     } catch (e) {
-      rows.innerHTML = `<tr><td colspan="7" class="err">Could not load: ${escape(String(e))}</td></tr>`;
+      rows.innerHTML = `<tr><td colspan="8" class="err">Could not load: ${escape(String(e))}</td></tr>`;
     }
   }
 

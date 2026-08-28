@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ApiError, keeper as keeperApi } from "../api";
 import type { KeeperDraft, Player } from "../types";
 import { PositionBadge } from "./PositionBadge";
 
@@ -15,6 +16,62 @@ interface Props {
  */
 export function KeeperEditor({ teams, rounds, keepers, onChange }: Props) {
   const [open, setOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  /**
+   * Pull the league's real keepers in, slot and round together.
+   *
+   * The keeper tool knows the round from ADP and Sleeper knows the slot from
+   * the draft order; neither alone can place a player on a board. Replaces
+   * rather than appends -- importing twice should leave twelve keepers, not
+   * twenty-four.
+   */
+  async function importLeague() {
+    setImporting(true);
+    setNote(null);
+    setProblem(null);
+    try {
+      const data = await keeperApi.forImport();
+
+      if (!data.visible) {
+        setProblem(
+          "Keepers stay hidden until the selection deadline passes, so they " +
+            "cannot be imported yet.",
+        );
+        return;
+      }
+
+      const fits = data.keepers.filter(
+        (k) => k.team_slot <= teams && k.round <= rounds,
+      );
+      onChange(
+        fits.map((k) => ({
+          team_slot: k.team_slot,
+          round: k.round,
+          player_name: k.player_name,
+        })),
+      );
+
+      const asides = [
+        data.waiting.length && `${data.waiting.join(", ")} have not chosen`,
+        data.unordered.length && `no draft slot for ${data.unordered.join(", ")}`,
+        fits.length < data.keepers.length &&
+          `${data.keepers.length - fits.length} outside a ${teams}-team, ${rounds}-round draft`,
+      ].filter(Boolean);
+
+      setNote(
+        `Imported ${fits.length} of ${data.managers}` +
+          (asides.length ? ` — ${asides.join("; ")}.` : "."),
+      );
+      if (fits.length) setOpen(true);
+    } catch (e) {
+      setProblem(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setImporting(false);
+    }
+  }
 
   // Shrinking the league can strand keepers on slots that no longer exist.
   useEffect(() => {
@@ -67,6 +124,15 @@ export function KeeperEditor({ teams, rounds, keepers, onChange }: Props) {
           )}
           <button
             type="button"
+            onClick={importLeague}
+            disabled={importing}
+            title="Pull every manager's keeper from the league, with the round their ADP costs"
+            className="rounded-md bg-raised px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+          >
+            {importing ? "Importing…" : "Import league"}
+          </button>
+          <button
+            type="button"
             onClick={add}
             className="rounded-md bg-raised px-3 py-1.5 text-xs font-semibold"
           >
@@ -74,6 +140,9 @@ export function KeeperEditor({ teams, rounds, keepers, onChange }: Props) {
           </button>
         </div>
       </div>
+
+      {note && <p className="mt-3 text-sm text-ink-2">{note}</p>}
+      {problem && <p className="mt-3 text-sm text-danger">{problem}</p>}
 
       {open && keepers.length > 0 && (
         <div className="mt-4 flex flex-col gap-2">

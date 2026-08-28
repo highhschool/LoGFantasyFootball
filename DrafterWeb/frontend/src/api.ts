@@ -1,6 +1,7 @@
 import type {
   Advice,
   ConnectDraft,
+  KeeperImportResult,
   KeeperManager,
   KeeperOption,
   KeeperState,
@@ -172,4 +173,7 @@ export const keeper = {
     }),
 
   clear: () => request<unknown>("/api/keeper/pick", { method: "DELETE" }),
+
+  /** The league's keepers as slot/round pairs, for a mock draft. */
+  forImport: () => request<KeeperImportResult>("/api/keeper/import"),
 };

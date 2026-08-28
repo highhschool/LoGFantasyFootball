@@ -37,6 +37,15 @@ def client(shared_app):
         yield c
 
 
+def _draft(order):
+    from app.integrations.sleeper import DraftInfo
+
+    return DraftInfo(
+        draft_id="d", status="pre_draft", draft_type="snake", season="2026",
+        teams=12, rounds=15, slot_to_roster={}, slots={}, draft_order=order,
+    )
+
+
 def make_session(client, **body):
     payload = {"your_slot": 1, "seed": 5}
     payload.update(body)
@@ -213,6 +222,9 @@ class TestItDestroysNothing:
             def league_managers(self, league_id):
                 return [Manager(user_id="m1", display_name="a", team_name="A")]
 
+            def latest_draft(self, league_id):
+                return _draft({"m1": 1})
+
         monkeypatch.setattr(main, "_sleeper", Fake(cache_dir=Path(".")))
         monkeypatch.setattr(app_config, "SLEEPER_LEAGUE_ID", "L")
 
@@ -237,6 +249,9 @@ class TestItDestroysNothing:
         class Fake(SleeperClient):
             def league_managers(self, league_id):
                 return [Manager(user_id="m9", display_name="z", team_name="Z")]
+
+            def latest_draft(self, league_id):
+                return _draft({"m9": 1})
 
         monkeypatch.setattr(main, "_sleeper", Fake(cache_dir=Path(".")))
         monkeypatch.setattr(app_config, "SLEEPER_LEAGUE_ID", "L")
