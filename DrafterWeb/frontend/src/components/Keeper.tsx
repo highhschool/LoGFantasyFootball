@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, keeper } from "../api";
 import type { KeeperOption, KeeperState } from "../types";
+import { Countdown } from "./Countdown";
 import { PositionBadge } from "./PositionBadge";
+import { SignIn } from "./SignIn";
 
 interface Props {
   onBack: () => void;
@@ -59,7 +61,7 @@ export function Keeper({ onBack }: Props) {
   if (!state.you) {
     return (
       <Shell onBack={onBack} deadline={state} onExpire={refresh}>
-        <Claim onClaimed={refresh} />
+        <SignIn onSignedIn={refresh} />
       </Shell>
     );
   }
@@ -166,140 +168,6 @@ function Row({
         </button>
       </div>
     </li>
-  );
-}
-
-function Claim({ onClaimed }: { onClaimed: () => void }) {
-  const [managers, setManagers] = useState<{ user_id: string; display_name: string; team_name: string }[]>([]);
-  const [userId, setUserId] = useState("");
-  const [code, setCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    keeper.managers().then(setManagers).catch(() => setManagers([]));
-  }, []);
-
-  async function submit() {
-    setBusy(true);
-    setError(null);
-    try {
-      await keeper.claim(userId, code);
-      onClaimed();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section className="flex flex-col gap-4 rounded-lg border border-rule bg-surface p-5">
-      <div>
-        <h2 className="text-sm font-semibold tracking-wider text-ink-3 uppercase">
-          Who are you?
-        </h2>
-        <p className="mt-1 text-sm text-ink-3">
-          Find your name and enter the code you were sent.
-        </p>
-      </div>
-
-      <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-ink-2">Manager</span>
-        <select
-          value={userId}
-          onChange={(e) => setUserId(e.target.value)}
-          className="select-field w-full rounded-md border border-rule bg-ground px-3 py-2"
-        >
-          <option value="">Choose…</option>
-          {managers.map((m) => (
-            <option key={m.user_id} value={m.user_id}>
-              {m.display_name || m.team_name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-ink-2">Code</span>
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
-          placeholder="ABC123"
-          maxLength={12}
-          autoCapitalize="characters"
-          autoCorrect="off"
-          spellCheck={false}
-          className="w-full rounded-md border border-rule bg-ground px-3 py-2 tracking-widest"
-        />
-      </label>
-
-      {error && <p className="text-sm text-danger">{error}</p>}
-
-      <button
-        type="button"
-        disabled={busy || !userId || code.trim().length < 4}
-        onClick={submit}
-        className="self-start rounded-md bg-accent px-4 py-2 font-semibold text-ground disabled:opacity-50"
-      >
-        {busy ? "Checking…" : "Continue"}
-      </button>
-    </section>
-  );
-}
-
-/**
- * Time left before selections lock.
- *
- * A weekday and a time answer "when", not "how long" -- and how long is the
- * part that decides whether you think about it now or later. Seconds only
- * appear inside the last hour, where they mean something; above that they are
- * just motion.
- */
-function Countdown({ until, onExpire }: { until: string; onExpire?: () => void }) {
-  const target = new Date(until).getTime();
-  const [left, setLeft] = useState(() => target - Date.now());
-
-  useEffect(() => {
-    const tick = () => setLeft(target - Date.now());
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [target]);
-
-  const done = left <= 0;
-  useEffect(() => {
-    // Let the page find out the deadline passed on its own, rather than
-    // leaving somebody looking at an open board that will refuse their pick.
-    if (done) onExpire?.();
-  }, [done, onExpire]);
-
-  if (done) return null;
-
-  const total = Math.floor(left / 1000);
-  const days = Math.floor(total / 86400);
-  const hours = Math.floor((total % 86400) / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
-
-  const parts = days
-    ? [`${days}d`, `${hours}h`, `${minutes}m`]
-    : hours
-      ? [`${hours}h`, `${minutes}m`, `${seconds}s`]
-      : [`${minutes}m`, `${seconds}s`];
-
-  const urgent = left < 60 * 60 * 1000;
-
-  return (
-    <>
-      {" — "}
-      <span
-        className={`tnum font-medium ${urgent ? "text-warn" : "text-ink-2"}`}
-        title={new Date(until).toLocaleString()}
-      >
-        {parts.join(" ")} left
-      </span>
-    </>
   );
 }
 

@@ -1,5 +1,7 @@
 import type { AdpProvenance } from "../api";
+import type { Profile } from "../types";
 import { AdpBadge } from "./AdpBadge";
+import { Avatar } from "./Avatar";
 
 export type Tool = "mock" | "live" | "keeper" | "contracts";
 
@@ -10,12 +12,36 @@ export type Tool = "mock" | "live" | "keeper" | "contracts";
  * against, another watches a real one happening -- so they get separate doors
  * rather than a mode switch buried inside one screen.
  */
-export function Home({ adp, onPick }: { adp?: AdpProvenance; onPick: (tool: Tool) => void }) {
+export function Home({
+  adp,
+  profile,
+  onPick,
+  onProfile,
+}: {
+  adp?: AdpProvenance;
+  profile: Profile | null;
+  onPick: (tool: Tool) => void;
+  onProfile: () => void;
+}) {
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col gap-8 overflow-y-auto p-6">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">NGFL Drafter</h1>
-        <AdpBadge adp={adp} className="mt-2" />
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">NGFL Drafter</h1>
+          <AdpBadge adp={adp} className="mt-2" />
+        </div>
+
+        {/* Signing in is a thing you do here, not something buried inside
+            whichever tool happened to own the codes first. */}
+        <button
+          type="button"
+          onClick={onProfile}
+          title={profile ? "Your profile" : "Sign in"}
+          className="flex shrink-0 items-center gap-2 rounded-full border border-rule bg-surface py-1 pr-3 pl-1 text-xs font-medium text-ink-2 hover:border-ink-3"
+        >
+          <Avatar profile={profile} size="sm" />
+          {profile ? profile.display_name : "Sign in"}
+        </button>
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2">

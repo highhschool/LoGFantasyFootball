@@ -215,6 +215,8 @@ def keeper_sync(
         order = {}
 
     result = store.sync_managers(
-        [(m.user_id, m.display_name, m.team_name) for m in managers], order
+        [(m.user_id, m.display_name, m.team_name) for m in managers],
+        order,
+        {m.user_id: m.avatar for m in managers if m.avatar},
     )
     return {"managers": len(managers), **result}

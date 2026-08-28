@@ -315,3 +315,16 @@ export interface ContractBook {
   realised: number;
   unrealised: number;
 }
+
+/** Who you are, and the picture to draw for you. */
+export interface Profile {
+  user_id: string;
+  display_name: string;
+  team_name: string;
+  draft_slot: number | null;
+  /** An uploaded data URL, or null. */
+  photo: string | null;
+  /** Sleeper's avatar, the free default. */
+  avatar_url: string | null;
+  custom: boolean;
+}

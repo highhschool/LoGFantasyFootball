@@ -49,7 +49,9 @@ CREATE TABLE IF NOT EXISTS keeper_managers (
     code         TEXT NOT NULL,
     claimed_by   TEXT NOT NULL DEFAULT '',
     claimed_at   TEXT,
-    draft_slot   INTEGER
+    draft_slot   INTEGER,
+    avatar       TEXT,
+    photo        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS contract_slates (
@@ -158,6 +160,13 @@ ADDED_COLUMNS = {
 
 ADDED_MANAGER_COLUMNS = {
     "draft_slot": "INTEGER",
+    # Sleeper's own avatar hash, synced with the rest of the league. Everyone
+    # already has one, so nobody has to upload anything for a face to appear.
+    "avatar": "TEXT",
+    # An uploaded override, held as a data URL. Small by construction: the
+    # browser redraws it through a canvas before sending, which both caps the
+    # size and turns whatever was chosen into plain raster pixels.
+    "photo": "TEXT",
 }
 
 
@@ -335,6 +344,7 @@ class SessionStore:
         self,
         managers: list[tuple[str, str, str]],
         order: dict[str, int] | None = None,
+        avatars: dict[str, str] | None = None,
     ) -> dict:
         """Reconcile the stored members with the league's.
 
@@ -346,6 +356,7 @@ class SessionStore:
         """
         incoming = {user_id for user_id, _, _ in managers}
         slots = order or {}
+        faces = avatars or {}
         added = 0
 
         with self._connect() as conn:
@@ -356,15 +367,17 @@ class SessionStore:
                 if existing:
                     conn.execute(
                         "UPDATE keeper_managers SET display_name = ?, team_name = ?,"
-                        " draft_slot = ? WHERE user_id = ?",
-                        (display_name, team_name, slots.get(user_id), user_id),
+                        " draft_slot = ?, avatar = ? WHERE user_id = ?",
+                        (display_name, team_name, slots.get(user_id),
+                         faces.get(user_id), user_id),
                     )
                 else:
                     conn.execute(
                         "INSERT INTO keeper_managers (user_id, display_name,"
-                        " team_name, code, draft_slot) VALUES (?,?,?,?,?)",
+                        " team_name, code, draft_slot, avatar)"
+                        " VALUES (?,?,?,?,?,?)",
                         (user_id, display_name, team_name, _new_code(),
-                         slots.get(user_id)),
+                         slots.get(user_id), faces.get(user_id)),
                     )
                     added += 1
 
@@ -444,6 +457,9 @@ class SessionStore:
             "user_id": row["user_id"],
             "display_name": row["display_name"],
             "team_name": row["team_name"],
+            "draft_slot": row["draft_slot"],
+            "avatar": row["avatar"],
+            "photo": row["photo"],
         }
 
     def set_keeper(self, user_id: str, pick: dict) -> None:
@@ -720,6 +736,14 @@ class SessionStore:
                 (market_id,),
             )
         return cur.rowcount > 0
+
+    def set_photo(self, user_id: str, photo: str | None) -> None:
+        """Set or clear a manager's uploaded picture. None falls back to Sleeper's."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE keeper_managers SET photo = ? WHERE user_id = ?",
+                (photo, user_id),
+            )
 
     def resolve_market(self, market_id: str, yes_won: bool) -> bool:
         """Settle a market. Never re-settles one already called."""

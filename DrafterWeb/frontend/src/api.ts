@@ -13,6 +13,7 @@ import type {
   LiveDraft,
   NewSession,
   Player,
+  Profile,
   SessionPatch,
   SessionSummary,
 } from "./types";
@@ -210,4 +211,17 @@ export const contracts = {
     }),
 
   me: () => request<ContractBook>("/api/contracts/me"),
+};
+
+/** Identity. Not the keeper tool's, though that is where the codes came from. */
+export const me = {
+  get: () => request<{ you: Profile | null }>("/api/me"),
+
+  setPhoto: (photo: string) =>
+    request<{ you: Profile }>("/api/me/photo", {
+      method: "PUT",
+      body: JSON.stringify({ photo }),
+    }),
+
+  clearPhoto: () => request<{ you: Profile }>("/api/me/photo", { method: "DELETE" }),
 };

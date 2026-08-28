@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, contracts } from "../api";
 import type { ContractBook, ContractMarket, ContractSlate } from "../types";
+import { SignIn } from "./SignIn";
 import { StatusDot, type Phase } from "./StatusDot";
 
 interface Props {
@@ -68,10 +69,11 @@ export function Contracts({ onBack }: Props) {
       {error && <p className="text-sm text-danger">{error}</p>}
 
       {signedIn === false && (
-        <p className="rounded-lg border border-warn/40 bg-warn-soft px-3 py-2 text-sm text-warn">
-          You can watch the board, but trading needs your manager code — sign in
-          on the keeper page first.
-        </p>
+        <SignIn
+          heading="Sign in to trade"
+          blurb="Anyone can watch the board. Placing a contract needs the code you were sent."
+          onSignedIn={() => refresh(chosen)}
+        />
       )}
 
       {book && <Summary book={book} />}

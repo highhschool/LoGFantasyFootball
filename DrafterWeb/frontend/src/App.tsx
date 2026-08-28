@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, live, type Health } from "./api";
+import { api, ApiError, live, me, type Health } from "./api";
 import { Contracts } from "./components/Contracts";
 import { Draft } from "./components/Draft";
 import { Home, type Tool } from "./components/Home";
 import { Keeper } from "./components/Keeper";
 import { LiveDraftView } from "./components/LiveDraftView";
 import { LiveSetup } from "./components/LiveSetup";
+import { ProfilePage } from "./components/ProfilePage";
 import { Setup } from "./components/Setup";
 import type {
   ConnectDraft,
   DraftSession,
   LiveDraft,
   NewSession,
+  Profile,
   SessionSummary,
 } from "./types";
 
@@ -26,6 +28,10 @@ export default function App() {
   const [booted, setBooted] = useState(false);
   const [tool, setTool] = useState<Tool | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Who you are, held once here rather than fetched by every tool that asks.
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [showProfile, setShowProfile] = useState(false);
 
   // Mock simulator
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -51,6 +57,8 @@ export default function App() {
       .then(setHealth)
       .catch((e) => setError(message(e)))
       .finally(() => setBooted(true));
+    // Signed out is a normal answer, so a failure here is not worth surfacing.
+    me.get().then((r) => setProfile(r.you)).catch(() => setProfile(null));
   }, []);
 
   useEffect(() => {
@@ -213,7 +221,24 @@ export default function App() {
     );
   }
 
-  return <Home adp={health?.adp} onPick={setTool} />;
+  if (showProfile) {
+    return (
+      <ProfilePage
+        profile={profile}
+        onChanged={setProfile}
+        onBack={() => setShowProfile(false)}
+      />
+    );
+  }
+
+  return (
+    <Home
+      adp={health?.adp}
+      profile={profile}
+      onPick={setTool}
+      onProfile={() => setShowProfile(true)}
+    />
+  );
 }
 
 function message(e: unknown): string {
