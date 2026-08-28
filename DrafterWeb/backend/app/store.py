@@ -52,6 +52,47 @@ CREATE TABLE IF NOT EXISTS keeper_managers (
     draft_slot   INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS contract_slates (
+    slate_id   TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    kind       TEXT NOT NULL DEFAULT 'weekly',
+    opens_at   TEXT NOT NULL,
+    closes_at  TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS contract_markets (
+    market_id    TEXT PRIMARY KEY,
+    slate_id     TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    params_json  TEXT NOT NULL,
+    question     TEXT NOT NULL,
+    opening      INTEGER NOT NULL,
+    b            REAL NOT NULL,
+    spread       INTEGER NOT NULL,
+    position_cap INTEGER NOT NULL,
+    game         TEXT,
+    closes_at    TEXT NOT NULL,
+    resolved     INTEGER,
+    resolved_at  TEXT,
+    created_at   TEXT NOT NULL
+);
+
+-- Append-only. The market is its trade log, so nothing here is ever updated
+-- and a settlement somebody disputes can be replayed trade by trade.
+CREATE TABLE IF NOT EXISTS contract_trades (
+    trade_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+    market_id TEXT NOT NULL,
+    user_id   TEXT NOT NULL,
+    side      TEXT NOT NULL,
+    shares    INTEGER NOT NULL,
+    cash      INTEGER NOT NULL,
+    at        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS contract_trades_market
+    ON contract_trades (market_id, trade_id);
+
 CREATE TABLE IF NOT EXISTS keeper_picks (
     user_id      TEXT PRIMARY KEY,
     player_key   TEXT NOT NULL,
@@ -524,3 +565,148 @@ class SessionStore:
                 (session_id, owner_id),
             )
             return cur.rowcount > 0
+
+    # ----------------------------------------------------------- contracts
+
+    def create_slate(
+        self, name: str, kind: str, opens_at: datetime, closes_at: datetime | None
+    ) -> str:
+        slate_id = uuid.uuid4().hex[:12]
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO contract_slates (slate_id, name, kind, opens_at,"
+                " closes_at, created_at) VALUES (?,?,?,?,?,?)",
+                (slate_id, name, kind, opens_at.isoformat(),
+                 closes_at.isoformat() if closes_at else None, _now()),
+            )
+        return slate_id
+
+    def slates(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM contract_slates ORDER BY opens_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def slate(self, slate_id: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM contract_slates WHERE slate_id = ?", (slate_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def create_market(
+        self,
+        slate_id: str,
+        kind: str,
+        params: dict,
+        question: str,
+        opening: int,
+        closes_at: datetime,
+        b: float,
+        spread: int,
+        position_cap: int,
+        game: str | None = None,
+    ) -> str:
+        market_id = uuid.uuid4().hex[:12]
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO contract_markets (market_id, slate_id, kind,"
+                " params_json, question, opening, b, spread, position_cap, game,"
+                " closes_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (market_id, slate_id, kind, json.dumps(params), question, opening,
+                 b, spread, position_cap, game, closes_at.isoformat(), _now()),
+            )
+        return market_id
+
+    def markets(self, slate_id: str | None = None) -> list[dict]:
+        sql = "SELECT * FROM contract_markets"
+        params: list[object] = []
+        if slate_id:
+            sql += " WHERE slate_id = ?"
+            params.append(slate_id)
+        sql += " ORDER BY created_at"
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(sql, params)]
+
+    def market(self, market_id: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM contract_markets WHERE market_id = ?", (market_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def trades(self, market_id: str) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM contract_trades WHERE market_id = ?"
+                " ORDER BY trade_id",
+                (market_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def trades_for(self, user_id: str) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT t.*, m.question, m.slate_id, m.resolved"
+                " FROM contract_trades t JOIN contract_markets m USING (market_id)"
+                " WHERE t.user_id = ? ORDER BY t.trade_id",
+                (user_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def execute_trade(self, market_id: str, user_id: str, side: str, shares: int,
+                      price_trade, now=None) -> dict:
+        """Price and record a trade against the committed book, atomically.
+
+        The quote a trader saw is indicative only. Two people buying at once
+        would otherwise both price against the same stale log -- and with a
+        position cap and real money, that is the difference between five
+        contracts and ten. `BEGIN IMMEDIATE` takes the write lock before the
+        log is read, so the price charged is the price after everyone ahead.
+
+        `price_trade(config_row, trades, now)` does the pricing; the store
+        stays ignorant of the market maker.
+        """
+        conn = self._connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+
+            market = conn.execute(
+                "SELECT * FROM contract_markets WHERE market_id = ?", (market_id,)
+            ).fetchone()
+            if market is None:
+                raise KeyError(market_id)
+
+            log = conn.execute(
+                "SELECT * FROM contract_trades WHERE market_id = ? ORDER BY trade_id",
+                (market_id,),
+            ).fetchall()
+
+            done = price_trade(dict(market), [dict(r) for r in log], now)
+
+            stamp = _now()
+            for leg in done["legs"]:
+                conn.execute(
+                    "INSERT INTO contract_trades (market_id, user_id, side,"
+                    " shares, cash, at) VALUES (?,?,?,?,?,?)",
+                    (market_id, user_id, leg["side"], leg["shares"], leg["cash"],
+                     stamp),
+                )
+            conn.commit()
+            return done
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def resolve_market(self, market_id: str, yes_won: bool) -> bool:
+        """Settle a market. Never re-settles one already called."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE contract_markets SET resolved = ?, resolved_at = ?"
+                " WHERE market_id = ? AND resolved IS NULL",
+                (1 if yes_won else 0, _now(), market_id),
+            )
+        return cur.rowcount > 0

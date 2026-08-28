@@ -95,6 +95,12 @@ def _moment(name: str) -> "datetime | None":
 CONTRACTS_OPEN = _moment("CONTRACTS_OPEN")
 CONTRACTS_CLOSE = _moment("CONTRACTS_CLOSE")
 
+# Contracts a manager may hold in any one market. Five caps the payout at $5,
+# which is what keeps this friendly.
+CONTRACTS_CAP = int(os.getenv("CONTRACTS_CAP", "5"))
+CONTRACTS_B = float(os.getenv("CONTRACTS_B", "10"))
+CONTRACTS_SPREAD = int(os.getenv("CONTRACTS_SPREAD", "1"))
+
 SLEEPER_API = os.getenv("SLEEPER_API", "https://api.sleeper.app/v1")
 SLEEPER_LEAGUE_ID = os.getenv("SLEEPER_LEAGUE_ID", "")
 

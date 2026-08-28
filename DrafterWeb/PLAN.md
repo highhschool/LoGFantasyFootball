@@ -425,10 +425,16 @@ system — the keeper codes already map a browser to a Sleeper user id.
   where a cent is a large fraction of the price.
 - **Settlement view.** Everyone settles with the house, so twelve bilateral
   numbers. Needs a screen that says who owes whom and marks them paid.
-- **Draft-night failure mode.** If the poller stalls mid-draft, markets stop
-  closing on time and someone can trade on a known answer. Closing must be
-  driven by observed picks, and a stalled feed should freeze trading rather
-  than leave it open.
+- ~~**Draft-night failure mode.**~~ Resolved by closing the whole slate at the
+  first pick instead of market by market, so nothing is tradeable once any
+  answer is knowable and a stalled poller cannot change that.
+- **Closing an in-season market that spans games.** "Does BigJedd beat
+  Cashmoneycar this week" involves eighteen players across a dozen games, so
+  its honest close is the earliest kickoff among them. Leaning towards
+  **deriving it from a schedule feed** rather than closing the whole slate on
+  Thursday or having the commissioner pick per market; Sleeper has no
+  documented schedule endpoint, so that needs a source. Revisit once in-season
+  markets are designed -- the draft slate does not depend on it.
 
 ## Explicitly not in v1
 

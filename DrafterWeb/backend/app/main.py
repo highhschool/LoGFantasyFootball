@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config
-from .api import admin, assistant, keeper, sessions
+from .api import admin, assistant, contracts, contracts_admin, keeper, sessions
 from .core.models import DraftConfig, RankingsError
 from .core.order import build_board, picks_for_slot
 from .core import adp
@@ -197,6 +197,8 @@ def board(
 app.include_router(sessions.router)
 app.include_router(assistant.router)
 app.include_router(keeper.router)
+app.include_router(contracts.router)
+app.include_router(contracts_admin.router)
 app.include_router(admin.router)
 
 
