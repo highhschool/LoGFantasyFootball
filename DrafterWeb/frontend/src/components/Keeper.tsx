@@ -17,6 +17,7 @@ interface Props {
 export function Keeper({ onBack }: Props) {
   const [state, setState] = useState<KeeperState | null>(null);
   const [options, setOptions] = useState<KeeperOption[]>([]);
+  const [season, setSeason] = useState<number | string>("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -24,7 +25,11 @@ export function Keeper({ onBack }: Props) {
     try {
       const next = await keeper.status();
       setState(next);
-      if (next.you) setOptions(await keeper.roster().then((r) => r.options));
+      if (next.you) {
+        const mine = await keeper.roster();
+        setOptions(mine.options);
+        setSeason(mine.season);
+      }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
     }
@@ -35,7 +40,6 @@ export function Keeper({ onBack }: Props) {
   }, [refresh]);
 
   async function choose(option: KeeperOption) {
-    if (!option.key) return;
     setBusy(true);
     setError(null);
     try {
@@ -60,7 +64,7 @@ export function Keeper({ onBack }: Props) {
     );
   }
 
-  const chosen = options.find((o) => o.key && o.key === state.pick_key);
+  const chosen = options.find((o) => o.key === state.pick_key);
 
   return (
     <Shell onBack={onBack} deadline={state} onExpire={refresh}>
@@ -89,8 +93,9 @@ export function Keeper({ onBack }: Props) {
           <Row
             key={option.sleeper_id}
             option={option}
-            selected={!!option.key && option.key === state.pick_key}
-            disabled={busy || !state.open || !option.keepable}
+            selected={option.key === state.pick_key}
+            disabled={busy || !state.open}
+            season={season}
             onChoose={() => choose(option)}
           />
         ))}
@@ -98,7 +103,8 @@ export function Keeper({ onBack }: Props) {
 
       <p className="text-xs text-ink-3">
         Keeping a player costs the round his ADP falls in. ADP moves until the
-        deadline, so anyone close to a boundary is marked.
+        deadline, so anyone close to a boundary is marked. A player this
+        year's ADP does not rank costs the last round.
       </p>
     </Shell>
   );
@@ -108,11 +114,13 @@ function Row({
   option,
   selected,
   disabled,
+  season,
   onChoose,
 }: {
   option: KeeperOption;
   selected: boolean;
   disabled: boolean;
+  season: number | string;
   onChoose: () => void;
 }) {
   return (
@@ -128,34 +136,35 @@ function Row({
         <div className="text-xs text-ink-3">
           {option.team}
           {option.bye_week !== null && ` · bye ${option.bye_week}`}
-          {option.adp !== null && ` · ADP ${option.adp.toFixed(1)}`}
+          {option.adp !== null
+            ? ` · ADP ${option.adp.toFixed(1)}`
+            : " · undrafted"}
         </div>
       </div>
 
-      {option.keepable ? (
-        <div className="flex items-center gap-2">
-          <span className="text-right">
-            <span className="tnum block text-sm font-semibold">
-              Round {option.round}
-            </span>
-            {option.near_boundary && (
-              <span className="block text-[11px] text-warn">could slip a round</span>
-            )}
+      <div className="flex items-center gap-2">
+        <span className="text-right">
+          <span className="tnum block text-sm font-semibold">
+            Round {option.round}
           </span>
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={onChoose}
-            className={`rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-40 ${
-              selected ? "bg-raised text-ink-2" : "bg-accent text-ground"
-            }`}
-          >
-            {selected ? "Keeping" : "Keep"}
-          </button>
-        </div>
-      ) : (
-        <span className="text-xs text-ink-3">not on this year's board</span>
-      )}
+          {option.near_boundary && (
+            <span className="block text-[11px] text-warn">could slip a round</span>
+          )}
+          {!option.ranked && (
+            <span className="block text-[11px] text-ink-3">no {season} ADP</span>
+          )}
+        </span>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onChoose}
+          className={`rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-40 ${
+            selected ? "bg-raised text-ink-2" : "bg-accent text-ground"
+          }`}
+        >
+          {selected ? "Keeping" : "Keep"}
+        </button>
+      </div>
     </li>
   );
 }

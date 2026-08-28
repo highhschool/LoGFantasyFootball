@@ -17,6 +17,7 @@ import math
 from dataclasses import dataclass
 
 from .models import Player
+from .names import player_key
 from .rankings import PlayerPool
 
 # How close to the next round a player has to sit before it is worth warning
@@ -37,14 +38,29 @@ class KeeperOption:
     round: int | None
     near_boundary: bool
 
+    key: str = ""
+
+    @property
+    def ranked(self) -> bool:
+        """Whether this year's ADP feed prices him at all."""
+        return self.player is not None
+
     @property
     def keepable(self) -> bool:
-        """A player the board does not rank has no price, so cannot be kept."""
-        return self.player is not None
+        """Every player on your roster can be kept.
+
+        Refusing the unranked had it backwards. Keeping costs the round a
+        player's ADP falls in, and a player with no ADP is by definition one
+        nobody drafts -- so he is the cheapest keeper available, not an
+        ineligible one. Colby Parkinson at a fifteenth-round price was not a
+        choice you could make, while his teammate at round fourteen was.
+        """
+        return True
 
     def as_dict(self) -> dict:
         return {
-            "key": self.player.key if self.player else None,
+            "key": self.key,
+            "ranked": self.ranked,
             "sleeper_id": self.sleeper_id,
             "name": self.name,
             "position": self.position,
@@ -84,12 +100,14 @@ def roster_options(
     directory: dict[str, dict],
     pool: PlayerPool,
     teams: int,
+    rounds: int,
 ) -> list[KeeperOption]:
     """Price every player on one manager's roster, cheapest round first.
 
     A roster is last season's, so some of it will have fallen off this year's
-    board entirely. Those are listed rather than dropped -- a manager looking
-    for a name and not finding it would reasonably assume the tool was broken.
+    ADP entirely -- eighteen of the league's hundred and eighty-five did in
+    2026. Those cost the last round, the cheapest price there is, and sort to
+    the bottom where the expensive picks are.
     """
     options: list[KeeperOption] = []
 
@@ -103,11 +121,14 @@ def roster_options(
 
         found = pool.find(name, position, team)
         if found is None:
+            # Keyed the same way the draft board keys anyone, so an unranked
+            # keeper is still one identity across the tools.
             options.append(
                 KeeperOption(
                     player=None, sleeper_id=sleeper_id, name=name,
-                    position=position, team=team, adp=None, round=None,
-                    near_boundary=False,
+                    position=position, team=team, adp=None,
+                    round=max(1, rounds), near_boundary=False,
+                    key=player_key(name, position, team),
                 )
             )
             continue
@@ -117,10 +138,11 @@ def roster_options(
             KeeperOption(
                 player=found, sleeper_id=sleeper_id, name=found.name,
                 position=found.position, team=found.team, adp=found.adp,
-                round=this_round, near_boundary=near,
+                round=this_round, near_boundary=near, key=found.key,
             )
         )
 
-    # Cheapest first, with the unpriced at the end where they cannot be chosen.
-    options.sort(key=lambda o: (o.adp is None, o.adp if o.adp is not None else 0.0))
+    # Cheapest first. The unranked sort last: they cost the final round, which
+    # is the most a keeper can cost.
+    options.sort(key=lambda o: (o.round, o.adp is None, o.adp or 0.0))
     return options

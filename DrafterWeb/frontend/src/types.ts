@@ -195,7 +195,7 @@ export interface KeeperManager {
 }
 
 export interface KeeperOption {
-  key: string | null;
+  key: string;
   sleeper_id: string;
   name: string;
   position: string;
@@ -203,9 +203,11 @@ export interface KeeperOption {
   bye_week: number | null;
   adp: number | null;
   /** The round keeping him costs, from where his ADP falls. */
-  round: number | null;
+  round: number;
   /** Close enough to a round boundary that the price could move. */
   near_boundary: boolean;
+  /** Whether this year's ADP prices him at all. The unranked cost the last round. */
+  ranked: boolean;
   keepable: boolean;
 }
 

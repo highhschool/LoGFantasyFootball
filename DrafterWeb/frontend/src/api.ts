@@ -158,7 +158,12 @@ export const keeper = {
     }),
 
   roster: () =>
-    request<{ selected: string | null; options: KeeperOption[] }>("/api/keeper/roster"),
+    request<{
+      selected: string | null;
+      season: number;
+      rounds: number;
+      options: KeeperOption[];
+    }>("/api/keeper/roster"),
 
   pick: (player_key: string) =>
     request<unknown>("/api/keeper/pick", {

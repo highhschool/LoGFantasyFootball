@@ -36,6 +36,10 @@ SEASON = int(os.getenv("SEASON", "2026"))
 # ADP comes from Fantasy Football Calculator by default, so the app needs
 # nothing from the CLI tool in order to run.
 ADP_TEAMS = int(os.getenv("ADP_TEAMS", "12"))
+
+# The league's draft length, which is also what an unranked keeper costs: a
+# player nobody drafts is the cheapest keeper there is, not an ineligible one.
+DRAFT_ROUNDS = int(os.getenv("DRAFT_ROUNDS", "15"))
 ADP_SCORING = os.getenv("ADP_SCORING", "ppr")  # ppr | half-ppr | standard
 
 # How long a cached feed is served without re-fetching. FFC publishes a rolling

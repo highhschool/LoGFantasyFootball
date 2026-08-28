@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS keeper_picks (
     player_name  TEXT NOT NULL,
     position     TEXT NOT NULL,
     nfl_team     TEXT NOT NULL,
-    adp          REAL NOT NULL,
+    adp          REAL,
     round        INTEGER NOT NULL,
     submitted_at TEXT NOT NULL,
     updated_at   TEXT NOT NULL
@@ -120,6 +120,42 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for column, spec in ADDED_COLUMNS.items():
         if column not in have:
             conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} {spec}")
+
+    _allow_keepers_without_adp(conn)
+
+
+def _allow_keepers_without_adp(conn: sqlite3.Connection) -> None:
+    """Drop the NOT NULL on keeper_picks.adp.
+
+    Keeping an unranked player costs the last round, and he has no ADP to
+    record. SQLite cannot relax a constraint in place, so the table is rebuilt
+    -- once, on databases that predate the rule.
+    """
+    adp = next(
+        (r for r in conn.execute("PRAGMA table_info(keeper_picks)") if r["name"] == "adp"),
+        None,
+    )
+    if adp is None or not adp["notnull"]:
+        return
+
+    conn.executescript(
+        """
+        CREATE TABLE keeper_picks_new (
+            user_id      TEXT PRIMARY KEY,
+            player_key   TEXT NOT NULL,
+            player_name  TEXT NOT NULL,
+            position     TEXT NOT NULL,
+            nfl_team     TEXT NOT NULL,
+            adp          REAL,
+            round        INTEGER NOT NULL,
+            submitted_at TEXT NOT NULL,
+            updated_at   TEXT NOT NULL
+        );
+        INSERT INTO keeper_picks_new SELECT * FROM keeper_picks;
+        DROP TABLE keeper_picks;
+        ALTER TABLE keeper_picks_new RENAME TO keeper_picks;
+        """
+    )
 
 
 class SessionStore:

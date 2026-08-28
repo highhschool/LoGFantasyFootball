@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from .. import config as app_config
-from ..core.keepers import price, roster_options
+from ..core.keepers import roster_options
 from ..core.rankings import PlayerPool
 from ..integrations.sleeper import SleeperClient, SleeperError
 from ..owner import resolve as resolve_owner
@@ -171,13 +171,17 @@ def roster(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     mine = rosters.get(manager["user_id"], [])
-    options = roster_options(mine, directory, pool, app_config.ADP_TEAMS)
+    options = roster_options(
+        mine, directory, pool, app_config.ADP_TEAMS, app_config.DRAFT_ROUNDS
+    )
     current = store.keeper(manager["user_id"])
 
     return {
         "you": manager,
         "open": is_open(),
         "teams": app_config.ADP_TEAMS,
+        "season": app_config.SEASON,
+        "rounds": app_config.DRAFT_ROUNDS,
         "selected": current["player_key"] if current else None,
         "options": [o.as_dict() for o in options],
     }
@@ -195,11 +199,9 @@ def pick(
     require_open()
     manager = require_claim(store, owner)
 
-    player = pool.by_key.get(body.player_key)
-    if player is None:
-        raise HTTPException(status_code=422, detail="no such player on this year's board")
-
-    # Only from your own roster: keeping someone else's player is not a thing.
+    # Validated against your own roster, which is the only list that matters:
+    # keeping someone else's player is not a thing, and a player this year's
+    # ADP has never heard of is still yours to keep.
     try:
         rosters = client.league_rosters(_league_id())
         directory = client.player_directory()
@@ -207,32 +209,34 @@ def pick(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     mine = roster_options(
-        rosters.get(manager["user_id"], []), directory, pool, app_config.ADP_TEAMS
+        rosters.get(manager["user_id"], []), directory, pool,
+        app_config.ADP_TEAMS, app_config.DRAFT_ROUNDS,
     )
-    if body.player_key not in {o.player.key for o in mine if o.player}:
+    chosen = next((o for o in mine if o.key == body.player_key), None)
+    if chosen is None:
         raise HTTPException(
-            status_code=422, detail=f"{player.name} was not on your roster last season"
+            status_code=422, detail="that player was not on your roster last season"
         )
 
-    this_round, near = price(player, app_config.ADP_TEAMS)
     store.set_keeper(manager["user_id"], {
-        "player_key": player.key,
-        "player_name": player.name,
-        "position": player.position,
-        "nfl_team": player.team,
-        "adp": player.adp,
-        "round": this_round,
+        "player_key": chosen.key,
+        "player_name": chosen.name,
+        "position": chosen.position,
+        "nfl_team": chosen.team,
+        "adp": chosen.adp,
+        "round": chosen.round,
     })
 
     return {
         "you": manager,
         "pick": {
-            "player_name": player.name,
-            "position": player.position,
-            "team": player.team,
-            "adp": player.adp,
-            "round": this_round,
-            "near_boundary": near,
+            "player_name": chosen.name,
+            "position": chosen.position,
+            "team": chosen.team,
+            "adp": chosen.adp,
+            "round": chosen.round,
+            "ranked": chosen.ranked,
+            "near_boundary": chosen.near_boundary,
         },
     }
 

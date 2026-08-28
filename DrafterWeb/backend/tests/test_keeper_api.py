@@ -175,16 +175,47 @@ class TestTheRoster:
         rounds = [o["round"] for o in options if o["round"]]
         assert rounds == sorted(rounds)
 
-    def test_a_player_off_this_years_board_is_shown_but_not_keepable(self, app, synced):
-        """Dropping him would look like the tool losing a player."""
+    def test_a_player_off_this_years_board_costs_the_last_round(self, app, synced):
+        """He is the cheapest keeper there is, not an ineligible one."""
         with TestClient(app) as c:
             claim(c, synced["u1"])
-            options = c.get("/api/keeper/roster").json()["options"]
+            data = c.get("/api/keeper/roster").json()
+            options = data["options"]
 
-        gone = [o for o in options if not o["keepable"]]
+        gone = [o for o in options if not o["ranked"]]
         assert len(gone) == 1
         assert gone[0]["name"] == "Retired Fellow"
-        assert gone[0]["round"] is None
+        assert gone[0]["round"] == data["rounds"]
+        assert gone[0]["adp"] is None
+        assert gone[0]["keepable"] is True
+
+    def test_an_unranked_player_can_actually_be_kept(self, app, synced):
+        """The whole point of the change -- the round trip has to work."""
+        with TestClient(app) as c:
+            claim(c, synced["u1"])
+            data = c.get("/api/keeper/roster").json()
+            unranked = next(o for o in data["options"] if not o["ranked"])
+
+            r = c.post("/api/keeper/pick", json={"player_key": unranked["key"]})
+            assert r.status_code == 200, r.text
+            assert r.json()["pick"]["round"] == data["rounds"]
+
+            state = c.get("/api/keeper").json()
+
+        assert state["pick"]["player_name"] == "Retired Fellow"
+        assert state["pick"]["adp"] is None
+        assert state["pick_key"] == unranked["key"]
+
+    def test_someone_elses_unranked_player_is_still_refused(self, app, synced):
+        """Keepable everywhere must not mean keepable from anyone's roster."""
+        with TestClient(app) as a, TestClient(app) as b:
+            claim(a, synced["u1"])
+            theirs = next(o for o in a.get("/api/keeper/roster").json()["options"]
+                          if not o["ranked"])
+            claim(b, synced["u2"])
+            r = b.post("/api/keeper/pick", json={"player_key": theirs["key"]})
+
+        assert r.status_code == 422
 
     def test_you_see_only_your_own(self, app, synced):
         with TestClient(app) as a, TestClient(app) as b:
