@@ -219,6 +219,39 @@ Three things real data corrected along the way, all worth remembering:
   everyone is gone by your next turn. Survival is stated only when it is
   actionable — who you can wait on.
 
+### Revisiting the advisor
+
+Good enough to draft with, not tuned. Everything adjustable sits at the top of
+`core/advisor.py`:
+
+| Knob | Now | What it does |
+|---|---|---|
+| `WEIGHT_DROPOFF` | 1.0 | how much the cost of waiting drives the score |
+| `WEIGHT_VALUE` | 0.6 | how much falling past his own ADP counts |
+| `VALUE_CAP` | 25 | beyond this, early or late stops meaning anything |
+| `FILLED_POSITION_WEIGHT` | 0.25 | a position already filled, divided again per pick over |
+| `DEPTH_AT_TOP` | 2 | names offered at the leading position |
+| `TIER_GAP_FRACTION` / `MIN_TIER_GAP` | 0.35 / 4 | what counts as a tier break |
+| `BYE_PENALTY` | 2.0 | a third starter on one bye |
+
+Known limits, in the order they are worth attacking:
+
+1. **Starters and bench are not distinguished.** The league starts
+   QB/2RB/2WR/TE/2FLEX/K/DEF with five on the bench, but the advisor only sees
+   flat position limits. A first running back is worth far more than a fifth,
+   and nothing currently says so. Sleeper reports the real slots, so the data
+   is already there.
+2. **No projections, so no true value over replacement.** Everything derives
+   from ADP, which measures what drafters *do* rather than what a player is
+   worth. A projections feed would let the score answer "how many points does
+   waiting cost" instead of "how many ADP picks".
+3. **The weights were never fitted to anything.** There is no ground truth for
+   whether a pick was good, so they are judgement. Replaying past drafts
+   against final standings would give something to tune against.
+4. **Survival assumes a normal spread around ADP.** Reasonable, but the
+   reported spread is tight enough that nearly everyone reads as gone, which
+   is why survival is shown only when it argues for waiting.
+
 ### Still open
 
 - **Manual entry fallback** for an offline or paper draft. The engine already
