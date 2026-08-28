@@ -11,6 +11,7 @@
 .EXAMPLE
     .\start.ps1
     .\start.ps1 -Stop
+    .\start.ps1 -RefreshRankings      # re-pull ADP first; do this on draft morning
     .\start.ps1 -Port 8001 -Season 2025
 #>
 
@@ -20,7 +21,8 @@ param(
     [int]$Port = 8000,
     [string]$Season,
     [string]$PublicUrl = "https://ngfldrafter.com",
-    [switch]$SkipPublicCheck
+    [switch]$SkipPublicCheck,
+    [switch]$RefreshRankings
 )
 
 $ErrorActionPreference = "Stop"
@@ -77,6 +79,37 @@ if (-not (Test-Path $Backend)) {
 }
 if ($Season) { $env:SEASON = $Season }
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir | Out-Null }
+
+# Opt-in, never automatic. Rankings live in the CLI tool's directory, the fetch
+# depends on an external API, and a stale-but-working file always beats a failed
+# startup -- so a refresh is something you ask for on draft morning, not a
+# network round trip on every reboot.
+if ($RefreshRankings) {
+    Write-Step "0. Refreshing rankings"
+
+    $builder = Join-Path (Split-Path -Parent $Root) "FantasyDrafterAI\build_rankings.py"
+    if (-not (Test-Path $builder)) {
+        Write-Warn "build_rankings.py not found at $builder; keeping existing rankings"
+    } else {
+        # A failure here must not stop the app from starting.
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            & python $builder
+            $code = $LASTEXITCODE
+        } catch {
+            $code = 1
+            Write-Warn $_.Exception.Message
+        }
+        $ErrorActionPreference = $prev
+
+        if ($code -eq 0) {
+            Write-Ok "rankings rebuilt"
+        } else {
+            Write-Warn "build_rankings.py failed (exit $code) - starting with the existing rankings"
+        }
+    }
+}
 
 Write-Step "1. API"
 

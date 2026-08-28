@@ -257,6 +257,25 @@ immediately becomes public again, and you can redo the policy.
 - P2's Sleeper polling is unaffected: it is an outbound call made by the server,
   not an inbound request through Access.
 
+### Refreshing ADP before a draft
+
+`start.ps1` does **not** rebuild rankings by default, and deliberately so: the
+fetch depends on an external API, and a stale-but-working rankings file always
+beats a startup that fails because a third party is down. It also writes into
+`FantasyDrafterAI/`, which belongs to the CLI tool.
+
+Ask for it explicitly when you want it — draft morning, mainly:
+
+```powershell
+.\start.ps1 -RefreshRankings
+```
+
+That runs `build_rankings.py`, then starts the app. If the rebuild fails the app
+still starts on the rankings you already had, and says so.
+
+FFC's feed is a rolling one-week window, so ADP keeps moving as the draft
+approaches. Refreshing the morning of catches late injury and preseason news.
+
 ### Still manual: the app itself
 
 The tunnel runs as a service, but `uvicorn` does not — if the machine reboots,
