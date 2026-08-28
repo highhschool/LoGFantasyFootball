@@ -116,6 +116,26 @@ export interface RosterView {
   unresolved_keepers?: string[];
 }
 
+export interface Advice {
+  key: string;
+  name: string;
+  position: Position;
+  team: string;
+  bye_week: number | null;
+  adp: number;
+  score: number;
+  /** Chance he is still available at your next pick. */
+  survival: number;
+  /** Picks he has fallen past his ADP; negative is a reach. */
+  value: number;
+  tier: number;
+  tier_remaining: number;
+  need: number;
+  bye_clash: boolean;
+  gone_by_next: boolean;
+  reasons: string[];
+}
+
 /* ------------------------------------------------------- live assistant */
 
 export interface UnrankedPick {

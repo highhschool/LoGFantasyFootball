@@ -1,4 +1,5 @@
 import type {
+  Advice,
   ConnectDraft,
   DraftSession,
   LiveDraft,
@@ -108,6 +109,11 @@ export const api = {
 
   simulate: (id: string) =>
     request<DraftSession>(`/api/sessions/${id}/simulate`, { method: "POST" }),
+
+  advice: (id: string, limit = 5) =>
+    request<{ advice: Advice[] }>(`/api/sessions/${id}/advice?limit=${limit}`).then(
+      (r) => r.advice,
+    ),
 };
 
 /** The live assistant. A separate tool, so a separate client. */
@@ -128,4 +134,9 @@ export const live = {
 
   remove: (id: string) =>
     request<{ deleted: string }>(`/api/assistant/${id}`, { method: "DELETE" }),
+
+  advice: (id: string, limit = 5) =>
+    request<{ advice: Advice[] }>(`/api/assistant/${id}/advice?limit=${limit}`).then(
+      (r) => r.advice,
+    ),
 };

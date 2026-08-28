@@ -185,7 +185,8 @@ session persistence, pick clock, keeper editor, slot picker, rename. Drafts are
 fixed at 15 rounds, matching the league and the 15-spot default roster. Live at
 <https://ngfldrafter.com>.
 
-**P2 — Live assistant. NEXT.** See the handoff below.
+**P2 — Live assistant. DONE.** Sleeper sync and the advisor, in a tool of
+its own. See the status below.
 
 **P3 — Harden.** Boot-time auto-start (the tunnel restarts itself, the app does
 not), session export/import, mobile layout, Cloudflare Access if wanted.
@@ -195,62 +196,37 @@ The event model already supports it: other slots become pick source `remote`.
 
 ---
 
-## P2 handoff — start here next session
+## P2 status
 
-### What exists
+**Done.**
 
-- `core/adp.py` — FFC fetch, disk cache, `Provenance`
-- `core/engine.py` — `replay(config, pool, log)`, the whole state machine
-- `core/bots.py` — ADP jitter via `STDEV`
-- `core/order.py` — snake order, `picks_until_next()` (the advisor needs this)
-- `core/names.py` — `player_key()`, normalization, DST-by-team matching
-- `core/roster.py` — pool-bounded position limits
-- `api/sessions.py` — mock draft routes
-- 189 tests, offline, `cd backend && python -m pytest -q`
+1. **`integrations/sleeper.py`** — discovers a league's latest draft, parses
+   picks into our vocabulary, caches every success and falls back on failure.
+2. **The assistant as its own tool** — `/api/assistant`, its own sessions, its
+   own list, its own screens. Each tool 404s the other's sessions.
+3. **`core/advisor.py`** — conditional survival probability, ADP tiers, value
+   against ADP, roster need and bye clashes, with the reasons stated. Exposed
+   by both tools at `/advice`.
 
-### Already proven for P2
+Three things real data corrected along the way, all worth remembering:
 
-Verified live against league `1261437958930563072` earlier:
+- Sleeper labels defenses `DEF`; passing that through raw produced keys that
+  matched nothing. Fixed at the boundary *and* inside `player_key`.
+- A positional log cannot skip a pick, but the real 2025 board contained a
+  round-15 back the ADP feed does not carry. Unranked players are now logged
+  with their own details rather than stalling the sync at pick 173 of 180.
+- The reported ADP spread is tight, two to five picks early, so nearly
+  everyone is gone by your next turn. Survival is stated only when it is
+  actionable — who you can wait on.
 
-- `GET /v1/league/<id>/drafts` -> `draft_id`, snake, 15 rounds, 12 teams
-- `GET /v1/draft/<id>/picks` -> 180 picks with `round`, `pick_no`,
-  `draft_slot`, player name/position/team, `is_keeper`
+### Still open
 
-And `tests/test_sleeper_replay.py` already asserts our board geometry matches
-Sleeper pick-for-pick, and that every drafted player resolves across the two
-feeds -- including punctuated names and defenses. **The name join is solved.**
-
-### P2 build order
-
-1. **`integrations/sleeper.py`** — client for the two endpoints above, with the
-   same cache-and-fallback discipline as `core/adp.py`. Sleeper being down
-   mid-draft must not break the board.
-2. **Assistant session mode** — `mode="assistant"`. Same engine; picks arrive
-   with source `sleeper` instead of `bot`. Poll every ~3s, append any pick whose
-   `pick_no` exceeds our log length. Keepers come free from `is_keeper`.
-3. **Unresolved-name UI** — a one-click mapping cached to SQLite, so an odd
-   name is fixed once. `names.py` handles the common cases already; this is the
-   escape hatch for the rest.
-4. **`core/advisor.py`** — scoring, all from data already loaded:
-   - **Survival probability**: P(available at your next pick) from `adp` and
-     `stdev` via the normal CDF, against `picks_until_next()`. The headline
-     number.
-   - **Tier breaks**: cluster ADP gaps within a position.
-   - **Value vs ADP**: how far a player has fallen past his own ADP.
-   - **Roster need**: from `TeamState.needs()`, plus real Sleeper starter slots.
-   - **Bye stacking**: `TeamState.bye_clashes()` already computes it.
-   Show each factor next to the score so it is explainable, not a black box.
-5. **Manual entry fallback** — for an offline or paper draft.
-
-### Watch out for
-
-- `SLEEPER_LEAGUE_ID` stays server-side. No response may contain it; managers
-  appear under team names. That is the privacy decision from this session.
-- The 2025 league ID is last season's. The 2026 league will have a new ID and a
-  new `draft_id`; discover it rather than hardcoding.
-- Sleeper's `draft_slot` is 1-based and matches ours. Confirmed, not assumed.
-- Polling must be idempotent. Re-appending a pick already in the log would
-  corrupt the board; key off `pick_no`.
+- **Manual entry fallback** for an offline or paper draft. The engine already
+  supports it (pick source `manual`); it needs a UI.
+- **A name-mapping escape hatch.** Unranked picks are reported but cannot be
+  mapped by hand to a ranked player. Only matters if a *ranked* player is ever
+  misspelled by Sleeper, which has not happened on real data.
+- **P3 hardening:** boot-time auto-start, session export/import, mobile layout.
 
 ## Risks
 

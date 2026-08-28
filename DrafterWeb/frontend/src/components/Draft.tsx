@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, ApiError, type AdpProvenance } from "../api";
 import { AdpBadge } from "./AdpBadge";
-import type { DraftSession, Player } from "../types";
+import type { Advice, DraftSession, Player } from "../types";
+import { AdvicePanel } from "./AdvicePanel";
 import { BoardGrid } from "./BoardGrid";
 import { PickClock } from "./PickClock";
 import { InlineName } from "./InlineName";
@@ -51,6 +52,8 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
   const [position, setPosition] = useState("");
   // Shown by default: the board is the thing you glance at between picks,
   // and it starts small enough not to crowd the list.
+  const [advice, setAdvice] = useState<Advice[]>([]);
+  const [advising, setAdvising] = useState(true);
   const [showBoard, setShowBoard] = useState(true);
   // Widen: the board spans the full width and everything else stacks under
   // it, for when you want to read the whole board rather than pick from it.
@@ -102,6 +105,25 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
       clearTimeout(timer);
     };
   }, [session.id, session.picks.length, position, search]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAdvising(true);
+    api
+      .advice(session.id)
+      .then((next) => {
+        if (!cancelled) setAdvice(next);
+      })
+      .catch(() => {
+        if (!cancelled) setAdvice([]);
+      })
+      .finally(() => {
+        if (!cancelled) setAdvising(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session.id, session.picks.length]);
 
   async function act(fn: () => Promise<DraftSession>) {
     setBusy(true);
@@ -256,7 +278,14 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
             />
           </div>
 
-          <div className="min-h-0 overflow-y-auto">
+          <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+            <AdvicePanel
+              advice={advice}
+              loading={advising}
+              yourTurn={session.your_turn}
+              canDraft={!locked}
+              onDraft={(a) => act(() => api.pick(session.id, a.key))}
+            />
             <RosterPanel session={session} />
           </div>
         </div>

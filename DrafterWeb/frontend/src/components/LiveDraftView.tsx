@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { live } from "../api";
-import type { LiveDraft } from "../types";
+import type { Advice, LiveDraft } from "../types";
+import { AdvicePanel } from "./AdvicePanel";
 import { BoardGrid } from "./BoardGrid";
 import { InlineName } from "./InlineName";
 import { RosterPanel } from "./RosterPanel";
@@ -15,6 +16,8 @@ interface Props {
 }
 
 export function LiveDraftView({ draft, onDraft, onRename, onExit }: Props) {
+  const [advice, setAdvice] = useState<Advice[]>([]);
+  const [advising, setAdvising] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const inFlight = useRef(false);
@@ -55,6 +58,25 @@ export function LiveDraftView({ draft, onDraft, onRename, onExit }: Props) {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [draft.complete, sync]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAdvising(true);
+    live
+      .advice(draft.id)
+      .then((next) => {
+        if (!cancelled) setAdvice(next);
+      })
+      .catch(() => {
+        if (!cancelled) setAdvice([]);
+      })
+      .finally(() => {
+        if (!cancelled) setAdvising(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.id, draft.picks.length]);
 
   const clock = draft.on_the_clock;
 
@@ -144,7 +166,9 @@ export function LiveDraftView({ draft, onDraft, onRename, onExit }: Props) {
 
       <div className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
         <BoardGrid session={draft} className="min-h-0 flex-1" />
-        <div className="min-h-0 overflow-y-auto">
+        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+          {/* No draft button: the pick is made on Sleeper, not here. */}
+          <AdvicePanel advice={advice} loading={advising} yourTurn={draft.your_turn} />
           <RosterPanel session={draft} />
         </div>
       </div>
