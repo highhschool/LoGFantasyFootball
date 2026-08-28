@@ -293,3 +293,144 @@ Both fixtures are cached as JSON under `backend/tests/fixtures/`, so the suite r
 - **Domain:** none yet — buy one through Cloudflare Registrar (~$10.44/yr). Not blocking; P0 develops on a quick tunnel.
 - **Host:** the Windows desktop, via Docker Desktop.
 - **Keepers:** not settled for 2026, and therefore optional throughout. See the keepers section above.
+
+---
+
+# P5 — Contracts: a prediction market for the league
+
+Status: **design agreed 2026-08-28, nothing built.** A fourth tool, separate
+from the other three in the same way they are separate from each other: its own
+routes, its own screens, its own storage. It borrows the manager codes for
+identity and the Sleeper client for resolution, and it changes nothing about
+mock drafts, the live assistant or keepers.
+
+## Locked decisions
+
+| Question | Call |
+|---|---|
+| Model | Kalshi-style binary contracts. $1 payout, price is the implied probability, YES + NO = $1. |
+| Pricing | **LMSR** automated market maker, `b = 10` |
+| Stakes | **Real money**, per contract. Settled offline; the app keeps the ledger and handles no payments. |
+| Counterparty | **The house is Brayden.** Loss per market is hard-capped at `b · ln 2` = **$6.93**. |
+| Position cap | **5 contracts** per manager per market — $5 maximum payout, under $5 maximum spend |
+| Friction | A **small spread**: buys quoted a cent or two above the model price, sells a cent or two below |
+| First slate | **Draft night**, pre-built by the commissioner from templates |
+| Identity | The existing per-manager keeper codes |
+
+**Parked, not rejected:** the ante-pot structure — contracts trade in play
+money, everyone antes $20, top three on the season leaderboard split the pot.
+It removes the house's exposure entirely and caps everyone's downside at their
+ante, and it is the obvious upgrade if per-contract real money turns out to
+generate arguments rather than fun. Worth keeping the ledger denominated so
+that switching is a config change rather than a rewrite.
+
+## Why an order book cannot work here
+
+Kalshi's 30¢ is 30¢ because someone will sell at 30¢. With twelve people an
+order book never fills: you post, nobody takes it, the market prices nothing
+and everyone stops looking. An automated market maker always quotes both sides,
+so a market works even with one participant awake.
+
+LMSR gives exactly the properties described: pairs summing to $1, price as
+probability, and a genuine early exit — selling is just buying the other side.
+
+    C(q) = b · ln( e^(q_yes/b) + e^(q_no/b) )
+    price_yes = e^(q_yes/b) / ( e^(q_yes/b) + e^(q_no/b) )
+    cost of a trade = C(q after) − C(q before)
+
+### What it costs the house
+
+At `b = 10`, opening at 50¢, twelve managers each buying their maximum five:
+
+| | House collects | House pays | P&L |
+|---|---|---|---|
+| All 12 buy YES, YES wins | $53.09 | $60.00 | **−$6.91** |
+| All 12 buy YES, YES loses | $53.09 | $0 | **+$53.09** |
+| Six a side | $30.00 | $30.00 | **$0.00** |
+
+Note the first row lands a cent under `b · ln 2`: unanimous buying is what
+drives the loss to its ceiling, and the ceiling holds regardless of volume or
+how wrong the opening price was. Downside capped, upside not — the same flow
+that loses $6.91 wins $53.09 when the league is wrong, and balanced flow is
+exactly flat. Across a ten-market slate the worst case is about **$70**.
+
+For comparison, and because `b` is the only dial:
+
+| `b` | max loss / market | one max buy moves 50¢ to | line at saturation |
+|---|---|---|---|
+| 5 | $3.47 | 73¢ | 100.0¢ |
+| **10** | **$6.93** | **62¢** | **99.8¢** |
+| 20 | $13.86 | 56¢ | 95.3¢ |
+
+`b = 5` is rejected on that last column as much as the third: a line pinned at
+100¢ means late buyers pay a dollar to win a dollar, which is not a market.
+
+The house loses only to the extent the league beats the opening line — which on
+draft night is a real risk, because the opening price comes from static ADP and
+the room is watching the board.
+
+## Markets are templates, not free text
+
+A templated market can be priced and resolved by the app. Free text cannot, and
+every market needing a human ruling is a real-money argument with the
+commissioner, who is also drafting.
+
+| Template | Opens at | Resolves from |
+|---|---|---|
+| `PLAYER drafted by pick N` | advisor survival curve | picks feed |
+| `A QB taken in round 1` | ADP distribution | scan round 1 |
+| `Any K before round N` | ADP distribution | first `position == K` |
+| `MANAGER takes POSITION at their first pick` | ADP + slot | that manager's first pick |
+| `N or more QBs gone by round R` | ADP distribution | count through R |
+
+**Opening prices come free.** `advisor.survival_probability` already computes
+P(player available at pick N) from ADP and stdev via a normal CDF. That is
+literally an opening line, and it means the market opens honest without anyone
+setting it by hand.
+
+## Lifecycle runs on draft state, not the clock
+
+Three moments, each expressed against the draft rather than a time:
+
+- **Opens** — days before, at the ADP-derived price.
+- **Closes** — at the pick that could decide it. *"Chase in the first three"*
+  must stop trading before pick 1 or it is a free bet on a known answer.
+- **Resolves** — the moment the picks feed proves it either way.
+
+The middle is where the fun is: a market on pick 24 stays open through two
+rounds and re-prices live as the board falls. The live assistant already polls
+the draft, so the machinery exists.
+
+## Architecture
+
+The same shape as everything else here. A market is its trade log:
+
+    replay(market, trades) -> MarketState   # price, positions, P&L, exposure
+
+Nothing derived is stored. Undo is `trades[:-1]`, the audit trail is free, and
+a disputed settlement can be replayed pick by pick. Consistent with
+`replay(config, pool, log)` in the draft engine.
+
+Storage: `markets`, `trades`, and a derived-on-read ledger. No new identity
+system — the keeper codes already map a browser to a Sleeper user id.
+
+## Open questions
+
+- **Cap scope.** Five per market is agreed. Per *week* or per *season* as well?
+  And after selling three of five, can you buy three more — is the cap on
+  position or on lifetime volume? (Assumption: position.)
+- **Holding both sides.** Buying 5 YES and 5 NO should net to zero rather than
+  being allowed to stand.
+- **Spread size.** One cent or two, and whether it widens near the extremes
+  where a cent is a large fraction of the price.
+- **Settlement view.** Everyone settles with the house, so twelve bilateral
+  numbers. Needs a screen that says who owes whom and marks them paid.
+- **Draft-night failure mode.** If the poller stalls mid-draft, markets stop
+  closing on time and someone can trade on a known answer. Closing must be
+  driven by observed picks, and a stalled feed should freeze trading rather
+  than leave it open.
+
+## Explicitly not in v1
+
+Multi-outcome markets ("who wins the championship"), limit orders, manager-created
+markets, in-app payments, and any market that needs a human to rule on it.
