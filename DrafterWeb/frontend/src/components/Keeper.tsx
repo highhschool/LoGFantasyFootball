@@ -54,7 +54,7 @@ export function Keeper({ onBack }: Props) {
 
   if (!state.you) {
     return (
-      <Shell onBack={onBack} deadline={state}>
+      <Shell onBack={onBack} deadline={state} onExpire={refresh}>
         <Claim onClaimed={refresh} />
       </Shell>
     );
@@ -63,7 +63,7 @@ export function Keeper({ onBack }: Props) {
   const chosen = options.find((o) => o.key && o.key === state.pick_key);
 
   return (
-    <Shell onBack={onBack} deadline={state}>
+    <Shell onBack={onBack} deadline={state} onExpire={refresh}>
       <p className="text-sm text-ink-2">
         {state.you.display_name || state.you.team_name} —{" "}
         {chosen ? (
@@ -206,7 +206,6 @@ function Claim({ onClaimed }: { onClaimed: () => void }) {
           {managers.map((m) => (
             <option key={m.user_id} value={m.user_id}>
               {m.display_name || m.team_name}
-              {m.team_name && m.display_name ? ` — ${m.team_name}` : ""}
             </option>
           ))}
         </select>
@@ -240,14 +239,71 @@ function Claim({ onClaimed }: { onClaimed: () => void }) {
   );
 }
 
+/**
+ * Time left before selections lock.
+ *
+ * A weekday and a time answer "when", not "how long" -- and how long is the
+ * part that decides whether you think about it now or later. Seconds only
+ * appear inside the last hour, where they mean something; above that they are
+ * just motion.
+ */
+function Countdown({ until, onExpire }: { until: string; onExpire?: () => void }) {
+  const target = new Date(until).getTime();
+  const [left, setLeft] = useState(() => target - Date.now());
+
+  useEffect(() => {
+    const tick = () => setLeft(target - Date.now());
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [target]);
+
+  const done = left <= 0;
+  useEffect(() => {
+    // Let the page find out the deadline passed on its own, rather than
+    // leaving somebody looking at an open board that will refuse their pick.
+    if (done) onExpire?.();
+  }, [done, onExpire]);
+
+  if (done) return null;
+
+  const total = Math.floor(left / 1000);
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+
+  const parts = days
+    ? [`${days}d`, `${hours}h`, `${minutes}m`]
+    : hours
+      ? [`${hours}h`, `${minutes}m`, `${seconds}s`]
+      : [`${minutes}m`, `${seconds}s`];
+
+  const urgent = left < 60 * 60 * 1000;
+
+  return (
+    <>
+      {" — "}
+      <span
+        className={`tnum font-medium ${urgent ? "text-warn" : "text-ink-2"}`}
+        title={new Date(until).toLocaleString()}
+      >
+        {parts.join(" ")} left
+      </span>
+    </>
+  );
+}
+
 function Shell({
   children,
   onBack,
   deadline,
+  onExpire,
 }: {
   children: React.ReactNode;
   onBack: () => void;
   deadline?: KeeperState;
+  onExpire?: () => void;
 }) {
   return (
     <div className="mx-auto flex h-full w-full max-w-2xl flex-col gap-5 overflow-y-auto p-6">
@@ -268,6 +324,9 @@ function Shell({
               hour: "numeric",
               minute: "2-digit",
             })}
+            {deadline.open && (
+              <Countdown until={deadline.deadline} onExpire={onExpire} />
+            )}
           </p>
         )}
       </header>
