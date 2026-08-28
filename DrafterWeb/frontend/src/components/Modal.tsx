@@ -64,7 +64,7 @@ export function Modal({
         // bottom margin, which the centring counts as part of it and lifts the
         // visible box by half. On a phone it stays a bottom sheet, where the
         // thumb is, and none of this applies.
-        className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-rule bg-surface p-5 shadow-xl sm:mb-[10vh] sm:max-h-[80dvh] sm:rounded-2xl"
+        className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-rule bg-surface p-5 shadow-xl sm:mb-[14vh] sm:max-h-[78dvh] sm:rounded-2xl"
       >
         <div className="mb-4 flex items-start justify-between gap-4">
           <h2 id={titleId} className="text-lg font-semibold tracking-tight">
