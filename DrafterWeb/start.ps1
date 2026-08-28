@@ -107,11 +107,16 @@ $outLog  = Join-Path $LogDir "api-$stamp.log"
 $errLog  = Join-Path $LogDir "api-$stamp.err.log"
 
 # Bound to loopback deliberately: the tunnel reaches it, the LAN cannot.
-$proc = Start-Process python `
-    -ArgumentList "-m","uvicorn","app.main:app","--host","127.0.0.1","--port","$Port" `
+#
+# Launched through cmd rather than with -RedirectStandardOutput, which would
+# leave PowerShell holding the child pipes: piping this script anywhere then
+# hangs forever waiting on a server that never exits. cmd owns the
+# redirection instead, so the script is safe to pipe.
+$command = "python -m uvicorn app.main:app --host 127.0.0.1 --port $Port"
+$redirect = ">> `"$outLog`" 2>> `"$errLog`""
+$proc = Start-Process cmd `
+    -ArgumentList "/c", "$command $redirect" `
     -WorkingDirectory $Backend `
-    -RedirectStandardOutput $outLog `
-    -RedirectStandardError  $errLog `
     -WindowStyle Hidden `
     -PassThru
 

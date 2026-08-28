@@ -222,6 +222,18 @@ def connect(
         )
     if info.teams < 2 or info.rounds < 1:
         raise HTTPException(status_code=422, detail="Sleeper reported an unusable draft shape")
+
+    # Rankings are loaded for one season. Following a draft from another one
+    # leaves most of its picks unmatched -- connecting the 2025 board against
+    # 2026 rankings left 27 picks unranked, Tyreek Hill and Joe Mixon among
+    # them -- which looks like a broken assistant rather than a mismatch.
+    if info.season and info.season != str(app_config.SEASON):
+        raise HTTPException(
+            status_code=422,
+            detail=f"this is a {info.season} draft, but the rankings loaded are "
+                   f"for {app_config.SEASON}. The assistant needs both to be the "
+                   f"same season to match players.",
+        )
     if body.your_slot > info.teams:
         raise HTTPException(
             status_code=422,

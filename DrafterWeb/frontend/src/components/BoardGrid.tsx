@@ -1,4 +1,4 @@
-import type { DraftSession, Position } from "../types";
+import type { BoardView, Position } from "../types";
 
 const TONE: Record<string, string> = {
   QB: "text-qb",
@@ -21,7 +21,7 @@ export function BoardGrid({
   className = "",
   style,
 }: {
-  session: DraftSession;
+  session: BoardView;
   className?: string;
   style?: React.CSSProperties;
 }) {

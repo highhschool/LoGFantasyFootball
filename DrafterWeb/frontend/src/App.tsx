@@ -1,69 +1,131 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type Health } from "./api";
+import { api, ApiError, live, type Health } from "./api";
 import { Draft } from "./components/Draft";
+import { Home, type Tool } from "./components/Home";
+import { LiveDraftView } from "./components/LiveDraftView";
+import { LiveSetup } from "./components/LiveSetup";
 import { Setup } from "./components/Setup";
-import type { DraftSession, NewSession, SessionSummary } from "./types";
+import type {
+  ConnectDraft,
+  DraftSession,
+  LiveDraft,
+  NewSession,
+  SessionSummary,
+} from "./types";
 
+/**
+ * Two tools behind one door.
+ *
+ * The mock simulator and the live assistant keep separate sessions, separate
+ * lists and separate screens; this only decides which one you are looking at.
+ */
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
+  const [booted, setBooted] = useState(false);
+  const [tool, setTool] = useState<Tool | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Mock simulator
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [session, setSession] = useState<DraftSession | null>(null);
   const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [booted, setBooted] = useState(false);
+
+  // Live assistant
+  const [liveDrafts, setLiveDrafts] = useState<SessionSummary[]>([]);
+  const [liveDraft, setLiveDraft] = useState<LiveDraft | null>(null);
+  const [connecting, setConnecting] = useState(false);
 
   const refreshSessions = useCallback(() => {
     api.listSessions().then(setSessions).catch(() => setSessions([]));
+  }, []);
+
+  const refreshLive = useCallback(() => {
+    live.list().then(setLiveDrafts).catch(() => setLiveDrafts([]));
   }, []);
 
   useEffect(() => {
     api
       .health()
       .then(setHealth)
-      .catch((e) => setError(e instanceof ApiError ? e.message : String(e)))
+      .catch((e) => setError(message(e)))
       .finally(() => setBooted(true));
-    refreshSessions();
-  }, [refreshSessions]);
+  }, []);
 
-  async function start(body: NewSession) {
+  useEffect(() => {
+    if (tool === "mock") refreshSessions();
+    if (tool === "live") refreshLive();
+  }, [tool, refreshSessions, refreshLive]);
+
+  // ------------------------------------------------------------ mock draft
+
+  async function startMock(body: NewSession) {
     setStarting(true);
     setError(null);
     try {
       setSession(await api.createSession(body));
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
+      setError(message(e));
     } finally {
       setStarting(false);
     }
   }
 
-  async function resume(id: string) {
+  async function openMock(id: string) {
     setError(null);
     try {
       setSession(await api.getSession(id));
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
+      setError(message(e));
     }
   }
 
-  async function rename(id: string, name: string) {
+  async function renameMock(id: string, name: string) {
     await api.updateSession(id, { name }).catch(() => undefined);
     refreshSessions();
   }
 
-  async function remove(id: string) {
+  async function deleteMock(id: string) {
     await api.deleteSession(id).catch(() => undefined);
     refreshSessions();
   }
 
-  function exit() {
-    setSession(null);
-    refreshSessions();
+  // -------------------------------------------------------- live assistant
+
+  async function connectLive(body: ConnectDraft) {
+    setConnecting(true);
+    setError(null);
+    try {
+      setLiveDraft(await live.connect(body));
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setConnecting(false);
+    }
   }
 
-  if (!booted) {
-    return <Centered>Loading…</Centered>;
+  async function openLive(id: string) {
+    setError(null);
+    try {
+      setLiveDraft(await live.get(id));
+    } catch (e) {
+      setError(message(e));
+    }
   }
+
+  async function renameLive(id: string, name: string) {
+    // Renaming is the one thing both tools share a route for.
+    await api.updateSession(id, { name }).catch(() => undefined);
+    refreshLive();
+  }
+
+  async function deleteLive(id: string) {
+    await live.remove(id).catch(() => undefined);
+    refreshLive();
+  }
+
+  // ----------------------------------------------------------------- views
+
+  if (!booted) return <Centered>Loading…</Centered>;
 
   if (health && health.status !== "ok") {
     return (
@@ -83,22 +145,69 @@ export default function App() {
 
   if (session) {
     return (
-      <Draft session={session} onSession={setSession} onExit={exit} adp={health?.adp} />
+      <Draft
+        session={session}
+        onSession={setSession}
+        onExit={() => {
+          setSession(null);
+          refreshSessions();
+        }}
+        adp={health?.adp}
+      />
     );
   }
 
-  return (
-    <Setup
-      sessions={sessions}
-      starting={starting}
-      error={error}
-      adp={health?.adp}
-      onStart={start}
-      onResume={resume}
-      onRename={rename}
-      onDelete={remove}
-    />
-  );
+  if (liveDraft) {
+    return (
+      <LiveDraftView
+        draft={liveDraft}
+        onDraft={setLiveDraft}
+        onRename={(name) => renameLive(liveDraft.id, name)}
+        onExit={() => {
+          setLiveDraft(null);
+          refreshLive();
+        }}
+      />
+    );
+  }
+
+  if (tool === "mock") {
+    return (
+      <Setup
+        sessions={sessions}
+        starting={starting}
+        error={error}
+        adp={health?.adp}
+        onStart={startMock}
+        onResume={openMock}
+        onRename={renameMock}
+        onDelete={deleteMock}
+        onBack={() => setTool(null)}
+      />
+    );
+  }
+
+  if (tool === "live") {
+    return (
+      <LiveSetup
+        drafts={liveDrafts}
+        connecting={connecting}
+        error={error}
+        adp={health?.adp}
+        onConnect={connectLive}
+        onOpen={openLive}
+        onRename={renameLive}
+        onDelete={deleteLive}
+        onBack={() => setTool(null)}
+      />
+    );
+  }
+
+  return <Home adp={health?.adp} onPick={setTool} />;
+}
+
+function message(e: unknown): string {
+  return e instanceof ApiError ? e.message : String(e);
 }
 
 function Centered({ children }: { children: React.ReactNode }) {

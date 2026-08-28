@@ -22,6 +22,7 @@ interface Props {
   onResume: (id: string) => void;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
+  onBack: () => void;
 }
 
 export function Setup({
@@ -33,6 +34,7 @@ export function Setup({
   onResume,
   onRename,
   onDelete,
+  onBack,
 }: Props) {
   const [teams, setTeams] = useState(12);
   const [rounds, setRounds] = useState(15);
@@ -67,8 +69,15 @@ export function Setup({
   }
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">NGFL Drafter</h1>
+      <header className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="self-start text-sm font-medium text-ink-3 hover:text-ink"
+        >
+          ← Tools
+        </button>
+        <h1 className="text-3xl font-semibold tracking-tight">Mock draft</h1>
         <AdpBadge adp={adp} className="mt-2" />
       </header>
 

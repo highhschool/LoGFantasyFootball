@@ -3,13 +3,23 @@
 Self-hosted draft tool for the National Goon Fantasy League. See [PLAN.md](PLAN.md)
 for the architecture and phase plan.
 
-**Status: P1 complete.** The mock draft sandbox is playable: pick against eleven
-bots with an optional pick clock, set keepers, undo, autopick, or simulate the
-rest. ADP comes live from the public feed, so the app is self-contained.
-209 backend tests pass.
+**Two tools, deliberately separate.**
 
-**Next: P2, the live draft assistant.** See the handoff at the end of
-[PLAN.md](PLAN.md).
+- **Mock draft** — practise against eleven bots, with keepers, an optional pick
+  clock, undo, autopick and simulate-to-end.
+- **Live draft assistant** — follow a real Sleeper draft as it happens. Paste
+  the draft link and the board fills itself in; no typing picks while the clock
+  runs.
+
+They keep separate routes, sessions, lists and screens, and each refuses the
+other's sessions. They share the engine, player pool and name resolution
+underneath, which is plumbing neither tool owns.
+
+ADP comes live from the public feed, so the app is self-contained.
+269 backend tests pass.
+
+**Next:** the advisor — survival probability, tier breaks, value against ADP.
+See the handoff at the end of [PLAN.md](PLAN.md).
 
 Live at <https://ngfldrafter.com>.
 
@@ -107,6 +117,9 @@ python -m uvicorn app.main:app --reload --port 8000
 | `POST /api/sessions/{id}/undo` | Rewind to your own last decision |
 | `POST /api/sessions/{id}/simulate` | Run the draft to the end |
 | `PATCH /api/sessions/{id}` | Rename, or change the pick clock |
+| `POST /api/assistant` | Follow a Sleeper draft (id or pasted URL) |
+| `GET /api/assistant` | Live drafts you are following |
+| `POST /api/assistant/{id}/sync` | Pull picks made since the last look |
 | `POST /api/rankings/reload` | Admin only; needs `X-Admin-Token` |
 
 Unavailable ADP degrades rather than crashes: the container stays up, health

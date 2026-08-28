@@ -1,7 +1,7 @@
-import type { DraftSession } from "../types";
+import type { RosterView } from "../types";
 import { PositionBadge } from "./PositionBadge";
 
-export function RosterPanel({ session }: { session: DraftSession }) {
+export function RosterPanel({ session }: { session: RosterView }) {
   const clashes = Object.entries(session.bye_clashes);
 
   return (
@@ -68,13 +68,13 @@ export function RosterPanel({ session }: { session: DraftSession }) {
         </div>
       )}
 
-      {session.unresolved_keepers.length > 0 && (
+      {(session.unresolved_keepers?.length ?? 0) > 0 && (
         <div className="rounded-lg border border-warn/40 bg-warn-soft px-3 py-2.5">
           <h2 className="text-xs font-semibold tracking-wider text-warn uppercase">
             Keepers not found
           </h2>
           <p className="mt-1 text-sm text-ink-2">
-            {session.unresolved_keepers.join(", ")} — spelled differently in this
+            {session.unresolved_keepers?.join(", ")} — spelled differently in this
             season's rankings. The draft is unaffected.
           </p>
         </div>

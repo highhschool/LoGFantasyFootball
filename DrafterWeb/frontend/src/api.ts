@@ -1,5 +1,7 @@
 import type {
+  ConnectDraft,
   DraftSession,
+  LiveDraft,
   NewSession,
   Player,
   SessionPatch,
@@ -106,4 +108,24 @@ export const api = {
 
   simulate: (id: string) =>
     request<DraftSession>(`/api/sessions/${id}/simulate`, { method: "POST" }),
+};
+
+/** The live assistant. A separate tool, so a separate client. */
+export const live = {
+  list: () =>
+    request<{ sessions: SessionSummary[] }>("/api/assistant").then((r) => r.sessions),
+
+  connect: (body: ConnectDraft) =>
+    request<LiveDraft>("/api/assistant", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  get: (id: string) => request<LiveDraft>(`/api/assistant/${id}`),
+
+  sync: (id: string) =>
+    request<LiveDraft>(`/api/assistant/${id}/sync`, { method: "POST" }),
+
+  remove: (id: string) =>
+    request<{ deleted: string }>(`/api/assistant/${id}`, { method: "DELETE" }),
 };

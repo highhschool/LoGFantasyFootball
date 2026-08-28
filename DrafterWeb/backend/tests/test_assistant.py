@@ -78,6 +78,14 @@ class TestConnecting:
         assert r.status_code == 422
         assert "does not exist" in r.json()["detail"]
 
+    def test_a_draft_from_another_season_is_refused(self, client, monkeypatch, sleeper_2025):
+        """Mismatched seasons leave most picks unmatched, which reads as broken."""
+        wrong = dict(sleeper_2025["draft"], season="2019")
+        monkeypatch.setattr(main._sleeper, "draft", lambda _id: parse_draft(wrong))
+        r = client.post("/api/assistant", json={"draft": "123", "your_slot": 1})
+        assert r.status_code == 422
+        assert "2019" in r.json()["detail"] and "2025" in r.json()["detail"]
+
     def test_a_non_snake_draft_is_refused(self, client, monkeypatch, sleeper_2025):
         auction = dict(sleeper_2025["draft"], type="auction")
         monkeypatch.setattr(main._sleeper, "draft", lambda _id: parse_draft(auction))
