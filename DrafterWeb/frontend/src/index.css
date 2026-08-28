@@ -102,3 +102,38 @@ body {
   color: transparent;
   text-shadow: 0 0 0 var(--color-ink);
 }
+
+/* Scrollbars, in the page's own palette.
+
+   The standard properties cover Firefox and current Chrome; the -webkit-
+   rules below carry older Safari and Chrome, which ignore them. Both are
+   needed, and both read their colours from the same tokens, so the bars
+   follow the theme rather than the operating system.
+
+   The thumb is drawn with a transparent border and background-clip, which is
+   how you inset a webkit thumb -- there is no padding to give it. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-rule) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-rule);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-ink-3);
+}

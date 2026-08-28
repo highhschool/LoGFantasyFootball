@@ -59,6 +59,7 @@ export function Setup({
       setRandomness(previous.randomness);
       setPickSeconds(previous.pick_seconds);
       setKeepers(c.keepers.map((k) => ({ ...k })));
+      setName(previous.name);
       setCopied(label);
     } catch {
       setCopied(null);
