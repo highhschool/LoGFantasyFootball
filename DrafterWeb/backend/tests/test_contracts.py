@@ -8,16 +8,25 @@ a coin flip reports the risk it actually carries.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from app.core.contracts import (
+    CLOSED,
+    OPEN,
+    PENDING,
+    SETTLED,
     MarketConfig,
     MarketError,
     Trade,
+    phase,
     plan,
     replay,
     settle_all,
 )
+
+CENTRAL = timezone(timedelta(hours=-5))
 from app.core.lmsr import NO, YES
 
 EVEN = MarketConfig(market_id="m1", question="Chase in the first three?", opening=50)
@@ -293,3 +302,77 @@ class TestReplayIsTheWholeTruth:
 
     def test_an_empty_log_is_the_opening_line(self):
         assert replay(market(opening=71), []).price_yes == 71
+
+
+class TestTheTradingWindow:
+    """Trading runs from the Monday to the first pick, then stops.
+
+    A per-market close driven by observed picks would leave something tradeable
+    after its answer was on screen whenever the feed stalled. One hard close
+    before the draft means nothing is ever tradeable once any answer is
+    knowable -- and it costs the early exit, which is the trade.
+    """
+
+    OPENS = datetime(2026, 8, 31, 9, 0, tzinfo=CENTRAL)
+    CLOSES = datetime(2026, 9, 1, 18, 30, tzinfo=CENTRAL)
+
+    def slate(self, **kw):
+        return market(opens_at=self.OPENS, closes_at=self.CLOSES, **kw)
+
+    def at(self, *args):
+        return datetime(*args, tzinfo=CENTRAL)
+
+    def test_it_is_pending_before_monday(self):
+        assert phase(self.slate(), self.at(2026, 8, 30, 12)) == PENDING
+
+    def test_it_is_open_through_monday_and_tuesday_afternoon(self):
+        for when in [self.at(2026, 8, 31, 9), self.at(2026, 8, 31, 23),
+                     self.at(2026, 9, 1, 18, 29)]:
+            assert phase(self.slate(), when) == OPEN, when
+
+    def test_it_closes_the_moment_the_draft_starts(self):
+        assert phase(self.slate(), self.at(2026, 9, 1, 18, 30)) == CLOSED
+        assert phase(self.slate(), self.at(2026, 9, 1, 18, 31)) == CLOSED
+
+    def test_settled_beats_the_clock(self):
+        assert phase(self.slate(), self.at(2026, 8, 31, 12), settled=True) == SETTLED
+
+    def test_nobody_can_buy_before_it_opens(self):
+        state = replay(self.slate(), [])
+        with pytest.raises(MarketError, match="not opened yet"):
+            plan(state, "u1", YES, 1, now=self.at(2026, 8, 30, 12))
+
+    def test_nobody_can_buy_once_the_draft_starts(self):
+        state = replay(self.slate(), [])
+        with pytest.raises(MarketError, match="trading closed"):
+            plan(state, "u1", YES, 1, now=self.at(2026, 9, 1, 18, 30))
+
+    def test_nobody_can_sell_out_during_the_draft_either(self):
+        """The cost of one hard close: no exit once it is running."""
+        config = self.slate()
+        monday = self.at(2026, 8, 31, 12)
+        done = plan(replay(config, []), "u1", YES, 5, now=monday)
+        state = replay(config, done.legs)
+
+        with pytest.raises(MarketError, match="trading closed"):
+            plan(state, "u1", YES, -5, now=self.at(2026, 9, 1, 19, 0))
+
+    def test_selling_works_right_up_to_the_close(self):
+        config = self.slate()
+        done = plan(replay(config, []), "u1", YES, 5, now=self.at(2026, 8, 31, 12))
+        state = replay(config, done.legs)
+        out = plan(state, "u1", YES, -5, now=self.at(2026, 9, 1, 18, 29))
+        assert out.cash < 0
+
+    def test_a_settled_market_takes_no_more_trades(self):
+        state = replay(self.slate(), [])
+        with pytest.raises(MarketError, match="already settled"):
+            plan(state, "u1", YES, 1, now=self.at(2026, 8, 31, 12), settled=True)
+
+    def test_a_market_with_no_window_is_always_open(self):
+        """Which is what every other test in this file relies on."""
+        assert phase(market()) == OPEN
+
+    def test_closing_before_opening_is_refused(self):
+        with pytest.raises(MarketError, match="close before it opens"):
+            market(opens_at=self.CLOSES, closes_at=self.OPENS)

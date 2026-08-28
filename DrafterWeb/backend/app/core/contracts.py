@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from .lmsr import DOLLAR, NO, SIDES, YES, apply, cost, price_cents, quote
 
@@ -30,6 +31,12 @@ DEFAULT_B = 10.0
 DEFAULT_SPREAD = 1      # cents per contract, each way
 DEFAULT_CAP = 5         # contracts per manager per market
 OPENING_FLOOR, OPENING_CEILING = 5, 95
+
+# Where a market is in its life. Trading happens in exactly one of these.
+PENDING = "pending"     # priced, not yet open
+OPEN = "open"
+CLOSED = "closed"       # the draft is under way; positions are locked
+SETTLED = "settled"
 
 
 class MarketError(ValueError):
@@ -44,6 +51,8 @@ class MarketConfig:
     b: float = DEFAULT_B
     spread: int = DEFAULT_SPREAD
     position_cap: int = DEFAULT_CAP
+    opens_at: datetime | None = None
+    closes_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not OPENING_FLOOR <= self.opening <= OPENING_CEILING:
@@ -54,7 +63,9 @@ class MarketConfig:
         if self.b <= 0:
             raise MarketError(f"b must be positive, got {self.b}")
         if self.position_cap < 1:
-            raise MarketError(f"the cap must allow at least one contract")
+            raise MarketError("the cap must allow at least one contract")
+        if self.opens_at and self.closes_at and self.closes_at <= self.opens_at:
+            raise MarketError("a market cannot close before it opens")
 
     @property
     def seed(self) -> float:
@@ -71,6 +82,26 @@ class MarketConfig:
         moves. This is the number to budget against, not the textbook one.
         """
         return math.ceil(self.b * math.log1p(math.exp(abs(self.seed) / self.b)) * DOLLAR)
+
+
+def phase(config: MarketConfig, now: datetime | None = None, settled: bool = False) -> str:
+    """Where a market is in its life.
+
+    Trading closes when the draft starts rather than market by market. A per
+    market close would have to be driven by observed picks, and a stalled feed
+    would then leave something tradeable after its answer was on screen -- with
+    real money, the difference between a bug and an argument. One hard close
+    before the first pick means nothing is ever tradeable once any answer is
+    knowable.
+    """
+    if settled:
+        return SETTLED
+    at = now or datetime.now(timezone.utc)
+    if config.opens_at and at < config.opens_at:
+        return PENDING
+    if config.closes_at and at >= config.closes_at:
+        return CLOSED
+    return OPEN
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,13 +233,34 @@ class Plan:
         }
 
 
-def plan(state: MarketState, user_id: str, side: str, shares: int) -> Plan:
+def plan(
+    state: MarketState,
+    user_id: str,
+    side: str,
+    shares: int,
+    now: datetime | None = None,
+    settled: bool = False,
+) -> Plan:
     """Price a request to hold `shares` more of `side`.
 
     A negative count sells that side back. Buying the side you are not on sells
     your existing holding down first, so nobody ends up paying the spread to
     hold a pair that is worth exactly a dollar whichever way it lands.
+
+    Refused outside the trading window -- including selling. Once the draft is
+    running there is no exit, which is the cost of closing before the first
+    pick rather than market by market.
     """
+    at = phase(state.config, now, settled)
+    if at != OPEN:
+        raise MarketError(
+            {
+                PENDING: "this market has not opened yet",
+                CLOSED: "trading closed when the draft started",
+                SETTLED: "this market has already settled",
+            }[at]
+        )
+
     if side not in SIDES:
         raise MarketError(f"side must be {YES!r} or {NO!r}, got {side!r}")
     if shares == 0:

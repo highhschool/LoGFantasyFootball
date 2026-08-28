@@ -74,6 +74,27 @@ def _deadline() -> "datetime | None":
 
 KEEPER_DEADLINE = _deadline()
 
+
+def _moment(name: str) -> "datetime | None":
+    """An instant from the environment, or None. Same rules as the deadline:
+    an explicit offset, because an hour's silent shift is worse than nothing."""
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return None
+    try:
+        when = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+# The contracts slate. Trading runs from the Monday until the draft starts,
+# and everything settles from the picks feed afterwards -- so nothing is
+# tradeable once any answer is knowable, which is the whole reason for a single
+# hard close rather than per-market ones.
+CONTRACTS_OPEN = _moment("CONTRACTS_OPEN")
+CONTRACTS_CLOSE = _moment("CONTRACTS_CLOSE")
+
 SLEEPER_API = os.getenv("SLEEPER_API", "https://api.sleeper.app/v1")
 SLEEPER_LEAGUE_ID = os.getenv("SLEEPER_LEAGUE_ID", "")
 
