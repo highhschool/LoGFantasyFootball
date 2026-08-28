@@ -5,6 +5,11 @@ import { AdpBadge } from "./AdpBadge";
 import { KeeperEditor } from "./KeeperEditor";
 import { SlotPicker } from "./SlotPicker";
 
+// The league drafts 15 rounds, and the default position limits hold
+// exactly 15 players, so this is a roster constraint rather than a
+// preference. The API rejects anything above it.
+const MAX_ROUNDS = 15;
+
 interface Props {
   sessions: SessionSummary[];
   starting: boolean;
@@ -70,16 +75,18 @@ export function Setup({
           </Field>
 
           <Field label="Rounds">
-            <input
-              type="number"
-              min={1}
-              max={15}
+            <select
               value={rounds}
-              onChange={(e) =>
-                setRounds(Math.max(1, Math.min(Number(e.target.value), 15)))
-              }
+              onChange={(e) => setRounds(Number(e.target.value))}
               className="w-full rounded-md border border-rule bg-ground px-3 py-2"
-            />
+            >
+              {Array.from({ length: MAX_ROUNDS }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                  {n === MAX_ROUNDS ? " (league default)" : ""}
+                </option>
+              ))}
+            </select>
           </Field>
 
           <Field label="Session name">
