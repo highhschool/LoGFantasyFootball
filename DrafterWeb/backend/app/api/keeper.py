@@ -120,6 +120,9 @@ def status(
         "open": is_open(),
         "deadline": when.isoformat() if when else None,
         "you": manager,
+        # The key as well as the name, so the roster can mark which row is
+        # already yours without matching on a display string.
+        "pick_key": pick["player_key"] if pick else None,
         "pick": None if pick is None else {
             "player_name": pick["player_name"],
             "position": pick["position"],

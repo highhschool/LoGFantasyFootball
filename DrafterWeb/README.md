@@ -10,6 +10,8 @@ for the architecture and phase plan.
 - **Live draft assistant** — follow a real Sleeper draft as it happens. Paste
   the draft link and the board fills itself in; no typing picks while the clock
   runs.
+- **Keeper selection** — one keeper per manager, priced at the round their ADP
+  falls in, open until a deadline.
 
 They keep separate routes, sessions, lists and screens, and each refuses the
 other's sessions. They share the engine, player pool and name resolution
@@ -248,6 +250,40 @@ enforceable, with no migration.
 **P2 design rule:** `SLEEPER_LEAGUE_ID` stays server-side in `.env`. The backend
 proxies Sleeper and returns only what the board needs. No response ever contains
 the league ID, and managers appear under their team names.
+
+### Keeper selection
+
+One keeper each, costing the round the player's ADP falls in: in a twelve-team
+league ADP 1–12 is a first-round keeper, 13–24 a second, and so on.
+
+**Nobody signs in.** Sleeper has no OAuth — `/oauth/authorize`, `/oauth/token`,
+`/auth` and `/login` all 404 — and its API answers anyone who asks, so a
+username proves nothing. The league is instead a closed set of twelve people
+Sleeper already names: each manager picks their team and enters a code sent to
+them privately, which ties every selection to a real Sleeper user id.
+
+Because the identity is real, the tool can show each manager *their own roster
+from last season*, already priced, rather than a search over 267 players.
+Players who have fallen off this year's board are listed as unkeepable rather
+than dropped — a missing name reads as a broken tool.
+
+**Running it:**
+
+1. Set `KEEPER_DEADLINE` in `.env`, with an explicit offset. `-05:00` is US
+   Central in August (CDT), `-06:00` in winter.
+2. Open `/admin`, press **Sync league from Sleeper**. Codes are minted for
+   anyone new; re-syncing never changes an existing one.
+3. Press **Show codes** and send each manager theirs.
+
+The admin page shows who has chosen, who has not, and what they took —
+throughout, not just after the deadline, because chasing the stragglers is the
+point. Everyone else sees only a count until the deadline passes: keeping is
+decided against the board, not against each other.
+
+**Two things the pricing is honest about.** ADP moves, so a keeper can change
+round without anyone touching him — every selection records the ADP and round
+it was made under, and anyone within two picks of a boundary is flagged. And
+once the deadline passes, selections lock and the full board opens to everyone.
 
 ### The owner's view (`/admin`)
 

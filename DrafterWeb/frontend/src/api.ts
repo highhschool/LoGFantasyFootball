@@ -1,6 +1,9 @@
 import type {
   Advice,
   ConnectDraft,
+  KeeperManager,
+  KeeperOption,
+  KeeperState,
   DraftSession,
   LiveDraft,
   NewSession,
@@ -139,4 +142,29 @@ export const live = {
     request<{ advice: Advice[] }>(`/api/assistant/${id}/advice?limit=${limit}`).then(
       (r) => r.advice,
     ),
+};
+
+/** Keeper selection. A third tool, so a third client. */
+export const keeper = {
+  status: () => request<KeeperState>("/api/keeper"),
+
+  managers: () =>
+    request<{ managers: KeeperManager[] }>("/api/keeper/managers").then((r) => r.managers),
+
+  claim: (user_id: string, code: string) =>
+    request<{ you: KeeperManager }>("/api/keeper/claim", {
+      method: "POST",
+      body: JSON.stringify({ user_id, code }),
+    }),
+
+  roster: () =>
+    request<{ selected: string | null; options: KeeperOption[] }>("/api/keeper/roster"),
+
+  pick: (player_key: string) =>
+    request<unknown>("/api/keeper/pick", {
+      method: "POST",
+      body: JSON.stringify({ player_key }),
+    }),
+
+  clear: () => request<unknown>("/api/keeper/pick", { method: "DELETE" }),
 };

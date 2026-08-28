@@ -1,7 +1,7 @@
 import type { AdpProvenance } from "../api";
 import { AdpBadge } from "./AdpBadge";
 
-export type Tool = "mock" | "live";
+export type Tool = "mock" | "live" | "keeper";
 
 /**
  * Two tools, chosen up front.
@@ -30,6 +30,12 @@ export function Home({ adp, onPick }: { adp?: AdpProvenance; onPick: (tool: Tool
           blurb="Follow your real Sleeper draft as it happens. Paste the draft link and the board fills itself in — no typing picks while the clock runs."
           action="Follow a draft"
           onClick={() => onPick("live")}
+        />
+        <Card
+          title="Keeper selection"
+          blurb="Choose the one player you are keeping. Your roster from last season, each priced at the round his ADP falls in."
+          action="Choose your keeper"
+          onClick={() => onPick("keeper")}
         />
       </div>
     </div>

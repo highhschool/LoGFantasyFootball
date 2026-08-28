@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, live, type Health } from "./api";
 import { Draft } from "./components/Draft";
 import { Home, type Tool } from "./components/Home";
+import { Keeper } from "./components/Keeper";
 import { LiveDraftView } from "./components/LiveDraftView";
 import { LiveSetup } from "./components/LiveSetup";
 import { Setup } from "./components/Setup";
@@ -185,6 +186,10 @@ export default function App() {
         onBack={() => setTool(null)}
       />
     );
+  }
+
+  if (tool === "keeper") {
+    return <Keeper onBack={() => setTool(null)} />;
   }
 
   if (tool === "live") {

@@ -47,6 +47,10 @@
   .board { padding: 0 0.9rem 0.9rem; overflow-x: auto; }
   .board table { font-size: 0.78rem; }
   .board td, .board th { white-space: nowrap; padding: 0.3rem 0.5rem; }
+  .codes-col { display: none; }
+  body.show-codes .codes-col { display: table-cell; }
+  code { font-family: ui-monospace, Consolas, monospace; letter-spacing: 0.08em; }
+  .pending { color: var(--ink-3); font-style: italic; }
 </style>
 </head>
 <body>
@@ -78,6 +82,32 @@
   </div>
 
   <div id="detail"></div>
+
+  <hr style="border:0;border-top:1px solid var(--rule);margin:0.5rem 0">
+
+  <header>
+    <h1>Keepers</h1>
+    <p class="sub" id="keeper-status">Loading…</p>
+  </header>
+
+  <div class="bar">
+    <button id="sync">Sync league from Sleeper</button>
+    <button id="toggle-codes" aria-pressed="false">Show codes</button>
+    <span class="muted" id="keeper-summary" style="margin-left:auto"></span>
+  </div>
+
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Team</th><th>Manager</th><th class="codes-col">Code</th>
+          <th>Keeper</th><th class="num">ADP</th><th class="num">Round</th>
+          <th>Chosen</th>
+        </tr>
+      </thead>
+      <tbody id="keeper-rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+    </table>
+  </div>
 </main>
 
 <script>
@@ -187,6 +217,91 @@
     });
 
   load();
+
+  // ---------------------------------------------------------------- keepers
+
+  let codesByUser = {};
+
+  function countdown(iso) {
+    if (!iso) return "no deadline set";
+    const left = new Date(iso) - new Date();
+    if (left <= 0) return "closed";
+    const h = Math.floor(left / 3600000);
+    const d = Math.floor(h / 24);
+    return d >= 1 ? `${d}d ${h % 24}h left` : `${h}h left`;
+  }
+
+  async function loadKeepers() {
+    const rows = document.getElementById("keeper-rows");
+    try {
+      const [board, codes] = await Promise.all([
+        fetch("/api/admin/keepers").then((r) => r.json()),
+        fetch("/api/admin/keepers/codes").then((r) => r.json()),
+      ]);
+
+      codesByUser = {};
+      (codes.managers || []).forEach((m) => { codesByUser[m.user_id] = m; });
+
+      document.getElementById("keeper-status").textContent =
+        board.deadline
+          ? `Deadline ${new Date(board.deadline).toLocaleString()} — ${countdown(board.deadline)}`
+          : "No deadline set.";
+      document.getElementById("keeper-summary").textContent =
+        `${board.chosen} of ${board.total} chosen`;
+
+      if (!board.keepers.length) {
+        rows.innerHTML = '<tr><td colspan="7" class="muted">No managers yet — sync the league.</td></tr>';
+        return;
+      }
+
+      rows.innerHTML = board.keepers.map((k) => {
+        const m = codesByUser[k.user_id] || {};
+        const claimed = m.claimed ? "yes" : "not yet";
+        return `
+        <tr>
+          <td>${escape(k.team_name || "—")}</td>
+          <td class="muted">${escape(k.display_name || "")}</td>
+          <td class="codes-col"><code>${escape(m.code || "")}</code> <span class="muted">${claimed}</span></td>
+          <td>${k.player_name
+            ? escape(k.position + " " + k.player_name + " (" + k.nfl_team + ")")
+            : '<span class="pending">not chosen</span>'}</td>
+          <td class="num">${k.adp != null ? k.adp.toFixed(1) : ""}</td>
+          <td class="num">${k.round ?? ""}</td>
+          <td class="muted">${k.updated_at ? fmt(k.updated_at) : ""}</td>
+        </tr>`;
+      }).join("");
+    } catch (e) {
+      rows.innerHTML = `<tr><td colspan="7" class="err">Could not load: ${escape(String(e))}</td></tr>`;
+    }
+  }
+
+  document.getElementById("sync").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = "Syncing…";
+    try {
+      const r = await fetch("/api/admin/keepers/sync", { method: "POST" });
+      const d = await r.json();
+      e.target.textContent = r.ok
+        ? `Synced ${d.managers} (${d.added} new)`
+        : `Failed: ${d.detail || r.status}`;
+      await loadKeepers();
+    } catch (err) {
+      e.target.textContent = `Failed: ${err}`;
+    } finally {
+      setTimeout(() => {
+        e.target.disabled = false;
+        e.target.textContent = "Sync league from Sleeper";
+      }, 2500);
+    }
+  });
+
+  document.getElementById("toggle-codes").addEventListener("click", (e) => {
+    const on = document.body.classList.toggle("show-codes");
+    e.target.setAttribute("aria-pressed", String(on));
+    e.target.textContent = on ? "Hide codes" : "Show codes";
+  });
+
+  loadKeepers();
 </script>
 </body>
 </html>

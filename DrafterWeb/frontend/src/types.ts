@@ -183,3 +183,42 @@ export interface ConnectDraft {
   your_slot: number;
   name?: string;
 }
+
+
+/* ---------------------------------------------------------------- keepers */
+
+export interface KeeperManager {
+  user_id: string;
+  display_name: string;
+  team_name: string;
+  claimed: boolean;
+}
+
+export interface KeeperOption {
+  key: string | null;
+  sleeper_id: string;
+  name: string;
+  position: string;
+  team: string;
+  bye_week: number | null;
+  adp: number | null;
+  /** The round keeping him costs, from where his ADP falls. */
+  round: number | null;
+  /** Close enough to a round boundary that the price could move. */
+  near_boundary: boolean;
+  keepable: boolean;
+}
+
+export interface KeeperState {
+  open: boolean;
+  deadline: string | null;
+  you: KeeperManager | null;
+  pick_key?: string | null;
+  pick: {
+    player_name: string;
+    position: string;
+    team: string;
+    adp: number;
+    round: number;
+  } | null;
+}
