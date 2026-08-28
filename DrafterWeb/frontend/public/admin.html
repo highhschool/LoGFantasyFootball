@@ -8,13 +8,13 @@
   :root {
     --ground: #f4f7f5; --surface: #fff; --raised: #eaf0ec; --ink: #16201c;
     --ink-2: #566159; --ink-3: #7c8781; --rule: #dbe3dd; --accent: #1c6b48;
-    --danger: #9b2c2c;
+    --danger: #9b2c2c; --warn: #8f5510;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --ground: #0e1412; --surface: #151d1a; --raised: #1c2622; --ink: #e7ede9;
       --ink-2: #9daaa3; --ink-3: #75837c; --rule: #25302b; --accent: #6cc095;
-      --danger: #e08585;
+      --danger: #e08585; --warn: #d9a45e;
     }
   }
   * { box-sizing: border-box; }
@@ -111,10 +111,21 @@
     border: 1px solid currentColor;
   }
   .pill.bad { color: var(--danger); }
-  .pill.warn { color: var(--warn, #a86a1a); }
+  .pill.warn { color: var(--warn); }
   .pill.good { color: var(--accent); }
   .pill.idle { color: var(--ink-3); }
-  @media (prefers-color-scheme: dark) { .pill.warn { color: #e0b062; } }
+  /* Whether a market is taking money. Four states, not two: "not open yet"
+     and "trading is over" are opposite things to somebody deciding whether to
+     come back, so they cannot share a colour -- and the dot carries a title
+     because red against green is the pairing colour blindness hides. */
+  .dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    margin-right: 0.4rem; vertical-align: 0.05em;
+  }
+  .dot.open { background: var(--accent); }
+  .dot.pending { background: var(--warn); }
+  .dot.closed { background: var(--danger); }
+  .dot.settled { background: var(--ink-3); }
   .steps { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; color: var(--ink-2); }
   .steps li { margin: 0.15rem 0; }
   .steps code { color: var(--ink); font-weight: 600; }
@@ -183,12 +194,12 @@
         <table>
           <thead>
             <tr>
-              <th>Market</th><th class="num">Yes</th><th class="num">Traded</th>
+              <th>Trading</th><th>Market</th><th class="num">Yes</th><th class="num">Traded</th>
               <th class="num">If yes</th><th class="num">If no</th>
               <th>Closes</th><th>Outcome</th><th></th>
             </tr>
           </thead>
-          <tbody id="contract-rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+          <tbody id="contract-rows"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
         </table>
       </div>
 
@@ -568,12 +579,13 @@
         : "No markets yet.";
 
       if (!d.markets.length) {
-        rows.innerHTML = '<tr><td colspan="7" class="muted">Open a slate, then add markets.</td></tr>';
+        rows.innerHTML = '<tr><td colspan="8" class="muted">Open a slate, then add markets.</td></tr>';
         return;
       }
 
       rows.innerHTML = d.markets.map((m) => `
         <tr>
+          <td class="muted"><span class="dot ${m.phase}" title="${m.phase}"></span>${m.phase}</td>
           <td>${escape(m.question)}</td>
           <td class="num">${m.price_yes}&cent;</td>
           <td class="num">${m.traded}</td>
@@ -589,7 +601,7 @@
 
       await loadLedger();
     } catch (e) {
-      rows.innerHTML = `<tr><td colspan="7" class="err">Could not load: ${escape(String(e))}</td></tr>`;
+      rows.innerHTML = `<tr><td colspan="8" class="err">Could not load: ${escape(String(e))}</td></tr>`;
     }
   }
 

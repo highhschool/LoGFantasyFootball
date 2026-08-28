@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from .. import config as app_config
 from ..admin import require_admin
-from ..core.contracts import MarketConfig, replay, settle_all
+from ..core.contracts import MarketConfig, phase, replay, settle_all
 from ..core.draft_markets import Board, TemplateError, build, template
 from ..core.rankings import PlayerPool
 from ..core.slates import Slate, SlateError, draft_slate, next_open, weekly_slate
@@ -114,6 +114,9 @@ def overview(
             "slate_id": row["slate_id"],
             "game": row["game"],
             "closes_at": row["closes_at"],
+            # Whether it is taking money, which is a different question from
+            # whether the draft has answered it.
+            "phase": phase(config, None, row["resolved"] is not None),
             "resolved": None if row["resolved"] is None else bool(row["resolved"]),
             "traders": len(state.positions),
         })

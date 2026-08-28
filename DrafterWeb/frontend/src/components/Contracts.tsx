@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, contracts } from "../api";
 import type { ContractBook, ContractMarket, ContractSlate } from "../types";
+import { StatusDot, type Phase } from "./StatusDot";
 
 interface Props {
   onBack: () => void;
@@ -112,30 +113,50 @@ export function Contracts({ onBack }: Props) {
   );
 }
 
+const when = (iso: string | null) =>
+  iso
+    ? new Date(iso).toLocaleString(undefined, {
+        weekday: "short",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : null;
+
+/**
+ * The slate's state, from its markets.
+ *
+ * Weekly slates close market by market on their own kickoffs, so a slate can
+ * be part open and part shut. Any market still taking money makes the slate
+ * open, because that is the thing somebody arriving wants to know.
+ */
+function slatePhase(markets: ContractMarket[]): Phase {
+  const phases = new Set(markets.map((m) => m.phase));
+  if (phases.has("open")) return "open";
+  if (phases.has("pending")) return "pending";
+  if (phases.has("closed")) return "closed";
+  return "settled";
+}
+
 function Window({ slate, markets }: { slate: ContractSlate; markets: ContractMarket[] }) {
-  const phase = markets[0]?.phase;
-  const when = (iso: string | null) =>
-    iso
-      ? new Date(iso).toLocaleString(undefined, {
-          weekday: "short",
-          hour: "numeric",
-          minute: "2-digit",
-        })
-      : null;
+  const phase = slatePhase(markets);
+  const mixed = new Set(markets.map((m) => m.phase)).size > 1;
 
   return (
-    <p className="text-sm text-ink-3">
-      {phase === "pending" && <>Opens {when(slate.opens_at)}.</>}
-      {phase === "open" && (
-        <>
-          Trading until <strong className="text-ink-2">{when(slate.closes_at)}</strong>
-          {slate.kind === "draft" && ", when the draft starts"}.
-        </>
-      )}
-      {(phase === "closed" || phase === "settled") && (
-        <>Trading closed. Markets settle as the draft runs.</>
-      )}
-    </p>
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-3">
+      <StatusDot phase={phase} />
+      <span>
+        {phase === "pending" && <>&middot; opens {when(slate.opens_at)}</>}
+        {phase === "open" && (
+          <>
+            &middot; until <strong className="text-ink-2">{when(slate.closes_at)}</strong>
+            {slate.kind === "draft" && ", when the draft starts"}
+            {mixed && " — some markets have closed already"}
+          </>
+        )}
+        {phase === "closed" && <>&middot; markets settle as the draft runs</>}
+        {phase === "settled" && <>&middot; everything has settled</>}
+      </span>
+    </div>
   );
 }
 
@@ -210,6 +231,13 @@ function Market({
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-medium">{market.question}</p>
         <Outcome market={market} />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-2 text-xs text-ink-3">
+        {/* Per market as well as per slate: in season these close on their own
+            kickoffs, so one can be shut while its neighbours still trade. */}
+        <StatusDot phase={market.phase} label={market.phase !== "open"} />
+        {market.phase === "open" && <span>until {when(market.closes_at)}</span>}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
