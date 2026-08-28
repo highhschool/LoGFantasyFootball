@@ -49,14 +49,27 @@
   details.panel { background: transparent; border: 0; }
   details.panel > summary {
     padding: 0; font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em;
-    display: flex; align-items: baseline; gap: 0.6rem; list-style: none;
+    display: flex; align-items: center; gap: 0.7rem; list-style: none;
   }
   details.panel > summary::-webkit-details-marker { display: none; }
+  /* Drawn from two borders rather than set as a character: a triangle
+     glyph renders differently on every platform, arrives as an emoji on
+     some, and needs an escape that has already been mangled once. This
+     is the same chevron everywhere, and it turns as the panel opens. */
   details.panel > summary::before {
-    content: "b8"; font-size: 0.9rem; color: var(--ink-3);
-    transition: transform 120ms ease;
+    content: ""; flex: none; width: 0.38em; height: 0.38em;
+    margin-left: 0.15em; margin-top: -0.16em;
+    border-right: 2px solid var(--ink-3);
+    border-bottom: 2px solid var(--ink-3);
+    border-radius: 1px; transform: rotate(-45deg);
+    transition: transform 150ms ease, border-color 150ms ease;
   }
-  details.panel[open] > summary::before { transform: rotate(90deg); }
+  details.panel[open] > summary::before {
+    transform: rotate(45deg); margin-top: -0.2em;
+  }
+  details.panel > summary:hover::before {
+    border-right-color: var(--ink); border-bottom-color: var(--ink);
+  }
   details.panel > summary .count {
     font-size: 0.85rem; font-weight: 400; color: var(--ink-3);
     letter-spacing: 0; margin-left: auto;
@@ -70,9 +83,19 @@
   input[type="search"] { min-width: 15rem; flex: 1 1 15rem; }
   th[data-sort] { cursor: pointer; user-select: none; }
   th[data-sort]:hover { color: var(--ink); }
-  th[data-sort]::after { content: ""; opacity: 0.5; }
-  th[data-sort][data-dir="asc"]::after { content: " 91"; }
-  th[data-sort][data-dir="desc"]::after { content: " 93"; }
+  /* Same chevron as the panels, for the same reason. Held at zero
+     opacity when unsorted so the header does not jump on a click. */
+  th[data-sort]::after {
+    content: ""; display: inline-block; width: 0.32em; height: 0.32em;
+    margin-left: 0.45em; vertical-align: 0.12em; opacity: 0;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg);
+  }
+  th[data-sort][data-dir="asc"]::after {
+    opacity: 0.8; transform: rotate(-135deg); vertical-align: 0.02em;
+  }
+  th[data-sort][data-dir="desc"]::after { opacity: 0.8; }
   .more { align-self: flex-start; }
   .note { margin: 0; font-size: 0.8rem; color: var(--ink-3); }
   .board { padding: 0 0.9rem 0.9rem; overflow-x: auto; }
