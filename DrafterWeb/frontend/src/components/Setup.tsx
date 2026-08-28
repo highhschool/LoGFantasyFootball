@@ -14,8 +14,6 @@ interface Props {
   sessions: SessionSummary[];
   starting: boolean;
   error: string | null;
-  season: number;
-  playerCount: number;
   adp?: AdpProvenance;
   onStart: (body: NewSession) => void;
   onResume: (id: string) => void;
@@ -26,8 +24,6 @@ export function Setup({
   sessions,
   starting,
   error,
-  season,
-  playerCount,
   adp,
   onStart,
   onResume,
@@ -44,9 +40,6 @@ export function Setup({
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
       <header>
         <h1 className="text-3xl font-semibold tracking-tight">NGFL Drafter</h1>
-        <p className="mt-1 text-ink-2">
-          Mock draft against the AI. {playerCount} players ranked for {season}.
-        </p>
         <AdpBadge adp={adp} className="mt-2" />
       </header>
 
@@ -83,7 +76,6 @@ export function Setup({
               {Array.from({ length: MAX_ROUNDS }, (_, i) => i + 1).map((n) => (
                 <option key={n} value={n}>
                   {n}
-                  {n === MAX_ROUNDS ? " (league default)" : ""}
                 </option>
               ))}
             </select>

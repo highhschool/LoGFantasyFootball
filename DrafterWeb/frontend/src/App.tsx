@@ -87,8 +87,6 @@ export default function App() {
       sessions={sessions}
       starting={starting}
       error={error}
-      season={health?.season ?? 0}
-      playerCount={health?.players_loaded ?? 0}
       adp={health?.adp}
       onStart={start}
       onResume={resume}
