@@ -1,17 +1,11 @@
 import type { DraftSession } from "../types";
 import { PositionBadge } from "./PositionBadge";
 
-export function RosterPanel({
-  session,
-  className = "flex min-h-0 flex-col gap-3",
-}: {
-  session: DraftSession;
-  className?: string;
-}) {
+export function RosterPanel({ session }: { session: DraftSession }) {
   const clashes = Object.entries(session.bye_clashes);
 
   return (
-    <section className={className}>
+    <section className="flex min-h-0 flex-col gap-3">
       <div className="rounded-lg border border-rule bg-surface">
         <h2 className="border-b border-rule px-3 py-2 text-xs font-semibold tracking-wider text-ink-3 uppercase">
           Your roster · {session.your_roster.length}/{session.config.rounds}
