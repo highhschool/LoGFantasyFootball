@@ -31,6 +31,9 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
   // Shown by default: the board is the thing you glance at between picks,
   // and it starts small enough not to crowd the list.
   const [showBoard, setShowBoard] = useState(true);
+  // Widen: the board spans the full width and everything else stacks under
+  // it, for when you want to read the whole board rather than pick from it.
+  const [wideBoard, setWideBoard] = useState(false);
 
   // Re-fetch whenever the board moves or the filters change. Debounced so
   // typing a name does not fire a request per keystroke.
@@ -103,7 +106,13 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
         </p>
       )}
 
-      <div className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+      <div
+        className={
+          wideBoard
+            ? "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4"
+            : "grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]"
+        }
+      >
         <div className="flex min-h-0 flex-col gap-3">
           <div className="flex flex-wrap gap-2">
             <button
@@ -132,11 +141,32 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
             </button>
             <button
               type="button"
-              onClick={() => setShowBoard((v) => !v)}
+              onClick={() => {
+                // Hiding the board also hides the widen control, so leaving
+                // wide mode on would strand the layout with no way back.
+                if (showBoard) setWideBoard(false);
+                setShowBoard((v) => !v);
+              }}
               className="ml-auto rounded-md bg-raised px-3 py-1.5 text-sm font-medium"
             >
               {showBoard ? "Hide board" : "Show board"}
             </button>
+            {showBoard && (
+              <button
+                type="button"
+                onClick={() => setWideBoard((v) => !v)}
+                aria-pressed={wideBoard}
+                title={
+                  wideBoard
+                    ? "Narrow the board and put the roster back alongside"
+                    : "Widen the board to full width, roster underneath"
+                }
+                aria-label={wideBoard ? "Narrow the board" : "Widen the board"}
+                className="rounded-md bg-raised px-3 py-1.5 text-sm font-medium"
+              >
+                {wideBoard ? "«" : "»"}
+              </button>
+            )}
           </div>
 
           {/* The board earns its space as it fills. Empty it is mostly blank
@@ -146,8 +176,12 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
           {showBoard && (
             <BoardGrid
               session={session}
-              style={{ flexGrow: boardGrow }}
-              className="min-h-24 basis-0 motion-safe:transition-[flex-grow] motion-safe:duration-500"
+              style={wideBoard ? undefined : { flexGrow: boardGrow }}
+              className={
+                wideBoard
+                  ? "h-[58vh] min-h-64 shrink-0"
+                  : "min-h-24 basis-0 motion-safe:transition-[flex-grow] motion-safe:duration-500"
+              }
             />
           )}
 
@@ -160,18 +194,27 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
             onSearch={setSearch}
             onPosition={setPosition}
             onDraft={(p) => act(() => api.pick(session.id, p.key))}
-            style={showBoard ? { flexGrow: listGrow } : undefined}
+            style={showBoard && !wideBoard ? { flexGrow: listGrow } : undefined}
             className={
-              showBoard
-                ? "min-h-40 basis-0 motion-safe:transition-[flex-grow] motion-safe:duration-500"
-                : "flex-1"
+              wideBoard
+                ? "h-[55vh] min-h-72 shrink-0"
+                : showBoard
+                  ? "min-h-40 basis-0 motion-safe:transition-[flex-grow] motion-safe:duration-500"
+                  : "flex-1"
             }
           />
         </div>
 
-        <div className="min-h-0 overflow-y-auto">
-          <RosterPanel session={session} />
-        </div>
+        {wideBoard ? (
+          <RosterPanel
+            session={session}
+            className="grid shrink-0 gap-3 md:grid-cols-2 xl:grid-cols-3"
+          />
+        ) : (
+          <div className="min-h-0 overflow-y-auto">
+            <RosterPanel session={session} />
+          </div>
+        )}
       </div>
     </div>
   );
