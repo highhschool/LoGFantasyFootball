@@ -701,6 +701,26 @@ class SessionStore:
         finally:
             conn.close()
 
+    def delete_market(self, market_id: str) -> bool:
+        """Remove a market, but only while nobody has traded it.
+
+        A market with money in it is somebody's position, and deleting it would
+        take real money off the board with no record of why. An untouched one
+        is just a typo.
+        """
+        with self._connect() as conn:
+            traded = conn.execute(
+                "SELECT COUNT(*) FROM contract_trades WHERE market_id = ?",
+                (market_id,),
+            ).fetchone()[0]
+            if traded:
+                return False
+            cur = conn.execute(
+                "DELETE FROM contract_markets WHERE market_id = ? AND resolved IS NULL",
+                (market_id,),
+            )
+        return cur.rowcount > 0
+
     def resolve_market(self, market_id: str, yes_won: bool) -> bool:
         """Settle a market. Never re-settles one already called."""
         with self._connect() as conn:

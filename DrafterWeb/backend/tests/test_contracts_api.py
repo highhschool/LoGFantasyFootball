@@ -525,3 +525,45 @@ class TestItHoldsUnderConcurrency:
 
         league = sum(row["net"] for row in ledger["managers"])
         assert league + ledger["house"] == 0
+
+
+class TestRemovingAMarket:
+    """The only destructive route, and it is narrow on purpose."""
+
+    def test_an_untraded_market_can_be_dropped(self, app, market):
+        with TestClient(app) as owner:
+            r = owner.delete(
+                f"/api/admin/contracts/markets/{market['market_id']}", headers=ADMIN
+            )
+        assert r.status_code == 200
+        with TestClient(app) as anyone:
+            board = anyone.get(
+                f"/api/contracts/slates/{market['slate_id']}").json()
+        assert board["markets"] == []
+
+    def test_a_traded_market_stays(self, app, market, codes, during):
+        """It is somebody's position, and real money."""
+        signed_in(app, codes["u1"]).post(
+            "/api/contracts/trade",
+            json={"market_id": market["market_id"], "side": "yes", "shares": 1})
+
+        with TestClient(app) as owner:
+            r = owner.delete(
+                f"/api/admin/contracts/markets/{market['market_id']}", headers=ADMIN)
+        assert r.status_code == 409
+        assert "traded" in r.json()["detail"]
+
+    def test_a_settled_market_stays(self, app, market, picks, player):
+        picks.append(pick(4, player.name))
+        with TestClient(app) as owner:
+            owner.post(
+                f"/api/admin/contracts/markets/{market['market_id']}/resolve",
+                headers=ADMIN)
+            r = owner.delete(
+                f"/api/admin/contracts/markets/{market['market_id']}", headers=ADMIN)
+        assert r.status_code == 409
+
+    def test_it_is_admin_only(self, app, market):
+        with TestClient(app) as anyone:
+            r = anyone.delete(f"/api/admin/contracts/markets/{market['market_id']}")
+        assert r.status_code == 404

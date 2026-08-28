@@ -205,6 +205,32 @@ def create_market(
     return {"market": store.market(market_id), "exposure": config.exposure}
 
 
+@router.delete("/markets/{market_id}")
+def remove_market(
+    market_id: str,
+    request: Request,
+    store: SessionStore = Depends(get_store),
+) -> dict:
+    """Drop a market nobody has traded.
+
+    The only destructive route here, and deliberately the narrowest one it can
+    be: once a single contract has changed hands the market is somebody's
+    position, and removing it would take real money off the board with nothing
+    recording why. A mistyped market that nobody touched is just a typo.
+    """
+    require_admin(request)
+
+    row = store.market(market_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="no such market")
+    if not store.delete_market(market_id):
+        raise HTTPException(
+            status_code=409,
+            detail="that market has been traded or settled, so it stays on the board",
+        )
+    return {"deleted": market_id, "question": row["question"]}
+
+
 @router.post("/markets/{market_id}/resolve")
 def resolve(
     market_id: str,

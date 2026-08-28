@@ -1,6 +1,10 @@
 import type {
   Advice,
   ConnectDraft,
+  ContractBook,
+  ContractMarket,
+  ContractQuote,
+  ContractSlate,
   KeeperImportResult,
   KeeperManager,
   KeeperOption,
@@ -176,4 +180,34 @@ export const keeper = {
 
   /** The league's keepers as slot/round pairs, for a mock draft. */
   forImport: () => request<KeeperImportResult>("/api/keeper/import"),
+};
+
+/** Contracts. A fourth tool, so a fourth client. */
+export const contracts = {
+  overview: () =>
+    request<{ you: KeeperManager | null; cap: number; slates: ContractSlate[] }>(
+      "/api/contracts",
+    ),
+
+  slate: (id: string) =>
+    request<{
+      slate: ContractSlate;
+      you: KeeperManager | null;
+      markets: ContractMarket[];
+    }>(`/api/contracts/slates/${id}`),
+
+  /** Indicative: the trade route prices again against the committed book. */
+  quote: (market_id: string, side: "yes" | "no", shares: number) =>
+    request<ContractQuote>("/api/contracts/quote", {
+      method: "POST",
+      body: JSON.stringify({ market_id, side, shares }),
+    }),
+
+  trade: (market_id: string, side: "yes" | "no", shares: number) =>
+    request<{ traded: ContractQuote; market: ContractMarket }>("/api/contracts/trade", {
+      method: "POST",
+      body: JSON.stringify({ market_id, side, shares }),
+    }),
+
+  me: () => request<ContractBook>("/api/contracts/me"),
 };

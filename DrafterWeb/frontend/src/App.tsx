@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, live, type Health } from "./api";
+import { Contracts } from "./components/Contracts";
 import { Draft } from "./components/Draft";
 import { Home, type Tool } from "./components/Home";
 import { Keeper } from "./components/Keeper";
@@ -15,10 +16,10 @@ import type {
 } from "./types";
 
 /**
- * Two tools behind one door.
+ * Four tools behind one door.
  *
- * The mock simulator and the live assistant keep separate sessions, separate
- * lists and separate screens; this only decides which one you are looking at.
+ * Each keeps its own sessions, lists and screens; this only decides which one
+ * you are looking at.
  */
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
@@ -190,6 +191,10 @@ export default function App() {
 
   if (tool === "keeper") {
     return <Keeper onBack={() => setTool(null)} />;
+  }
+
+  if (tool === "contracts") {
+    return <Contracts onBack={() => setTool(null)} />;
   }
 
   if (tool === "live") {

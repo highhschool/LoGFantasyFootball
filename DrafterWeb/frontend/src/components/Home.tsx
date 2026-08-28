@@ -1,14 +1,14 @@
 import type { AdpProvenance } from "../api";
 import { AdpBadge } from "./AdpBadge";
 
-export type Tool = "mock" | "live" | "keeper";
+export type Tool = "mock" | "live" | "keeper" | "contracts";
 
 /**
- * Two tools, chosen up front.
+ * Four tools, chosen up front.
  *
  * They are genuinely different jobs -- one invents a draft to practise
- * against, the other watches a real one happening -- so they get separate
- * doors rather than a mode switch buried inside one screen.
+ * against, another watches a real one happening -- so they get separate doors
+ * rather than a mode switch buried inside one screen.
  */
 export function Home({ adp, onPick }: { adp?: AdpProvenance; onPick: (tool: Tool) => void }) {
   return (
@@ -30,6 +30,12 @@ export function Home({ adp, onPick }: { adp?: AdpProvenance; onPick: (tool: Tool
           blurb="Follow your real Sleeper draft as it happens. Paste the draft link and the board fills itself in — no typing picks while the clock runs."
           action="Follow a draft"
           onClick={() => onPick("live")}
+        />
+        <Card
+          title="Contracts"
+          blurb="Back your read on draft night. Every price is the league's odds, a contract pays $1 if it lands, and five a market is the most anyone can hold."
+          action="See the board"
+          onClick={() => onPick("contracts")}
         />
         <Card
           title="Keeper selection"

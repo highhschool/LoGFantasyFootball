@@ -245,3 +245,73 @@ export interface KeeperState {
     round: number;
   } | null;
 }
+
+// ------------------------------------------------------------- contracts
+
+export interface ContractSlate {
+  slate_id: string;
+  name: string;
+  kind: "draft" | "weekly";
+  opens_at: string;
+  closes_at: string | null;
+  markets?: number;
+  settled?: number;
+}
+
+export interface ContractPosition {
+  yes: number;
+  no: number;
+  /** Net cents paid in; negative means taken out. */
+  cash: number;
+  /** What the holding would fetch at the current line. */
+  value: number;
+  open_pnl: number;
+}
+
+export interface ContractMarket {
+  market_id: string;
+  question: string;
+  price_yes: number;
+  price_no: number;
+  traded: number;
+  kind: string;
+  slate_id: string;
+  game: string | null;
+  closes_at: string;
+  phase: "pending" | "open" | "closed" | "settled";
+  resolved: boolean | null;
+  cap: number;
+  /** Only present once you have signed in. */
+  you?: ContractPosition;
+  headroom?: number;
+}
+
+export interface ContractQuote {
+  cash: number;
+  shares: number;
+  price_before: number;
+  price_after: number;
+  indicative?: boolean;
+  legs: { side: string; shares: number; cash: number }[];
+}
+
+export interface ContractBookEntry {
+  market_id: string;
+  question: string;
+  slate_id: string;
+  yes: number;
+  no: number;
+  cash: number;
+  value: number;
+  open_pnl: number;
+  price_yes: number;
+  result?: number;
+}
+
+export interface ContractBook {
+  you: KeeperManager;
+  open: ContractBookEntry[];
+  settled: ContractBookEntry[];
+  realised: number;
+  unrealised: number;
+}

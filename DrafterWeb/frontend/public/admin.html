@@ -166,6 +166,38 @@
 
   <hr style="border:0;border-top:1px solid var(--rule);margin:0.5rem 0">
 
+  <details class="panel" id="panel-contracts">
+    <summary>Contracts <span class="count" id="contracts-summary"></span></summary>
+    <div class="body">
+      <p class="sub" id="contracts-risk" style="margin:0">Loading…</p>
+
+      <div class="bar">
+        <button id="new-slate">New draft slate</button>
+        <button id="settle">Settle what the draft has answered</button>
+        <button id="refresh-contracts">Refresh</button>
+      </div>
+
+      <div id="slate-form" hidden></div>
+
+      <div class="wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Market</th><th class="num">Yes</th><th class="num">Traded</th>
+              <th class="num">If yes</th><th class="num">If no</th>
+              <th>Closes</th><th>Outcome</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="contract-rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+
+      <div id="ledger"></div>
+    </div>
+  </details>
+
+  <hr style="border:0;border-top:1px solid var(--rule);margin:0.5rem 0">
+
   <details class="panel" id="panel-keepers" open>
     <summary>Keepers <span class="count" id="keeper-summary"></span></summary>
     <div class="body">
@@ -506,6 +538,147 @@
       }, 2500);
     }
   });
+
+  // ------------------------------------------------------------ contracts
+
+  const money = (c) => (c < 0 ? "-" : "") + "$" + (Math.abs(c) / 100).toFixed(2);
+  const when = (iso) => {
+    try {
+      return new Date(iso).toLocaleString(undefined, {
+        weekday: "short", hour: "numeric", minute: "2-digit",
+      });
+    } catch { return iso; }
+  };
+
+  async function loadContracts() {
+    const rows = document.getElementById("contract-rows");
+    try {
+      const d = await fetch("/api/admin/contracts").then((r) => r.json());
+
+      document.getElementById("contracts-summary").textContent =
+        `${d.markets.length} market${d.markets.length === 1 ? "" : "s"}`;
+
+      // The number to watch on the night: what is actually on the line, not
+      // what was budgeted when the markets opened.
+      const worst = Math.min(d.house_if_all_yes, d.house_if_all_no);
+      document.getElementById("contracts-risk").innerHTML = d.markets.length
+        ? `Worst case from here: <strong class="${worst < 0 ? "err" : ""}">${money(worst)}</strong>` +
+          ` · budgeted ${money(-d.budgeted_exposure)} across ${d.markets.length}` +
+          ` · ${d.slates.length} slate${d.slates.length === 1 ? "" : "s"}`
+        : "No markets yet.";
+
+      if (!d.markets.length) {
+        rows.innerHTML = '<tr><td colspan="7" class="muted">Open a slate, then add markets.</td></tr>';
+        return;
+      }
+
+      rows.innerHTML = d.markets.map((m) => `
+        <tr>
+          <td>${escape(m.question)}</td>
+          <td class="num">${m.price_yes}&cent;</td>
+          <td class="num">${m.traded}</td>
+          <td class="num ${m.house_if_yes < 0 ? "err" : ""}">${money(m.house_if_yes)}</td>
+          <td class="num ${m.house_if_no < 0 ? "err" : ""}">${money(m.house_if_no)}</td>
+          <td class="muted">${escape(when(m.closes_at))}</td>
+          <td>${m.resolved === null
+            ? '<span class="pill idle">open</span>'
+            : `<span class="pill ${m.resolved ? "good" : "bad"}">${m.resolved ? "yes" : "no"}</span>`}</td>
+          <td>${m.traded === 0 && m.resolved === null
+            ? `<button data-drop="${m.market_id}">Remove</button>` : ""}</td>
+        </tr>`).join("");
+
+      await loadLedger();
+    } catch (e) {
+      rows.innerHTML = `<tr><td colspan="7" class="err">Could not load: ${escape(String(e))}</td></tr>`;
+    }
+  }
+
+  async function loadLedger() {
+    const box = document.getElementById("ledger");
+    const d = await fetch("/api/admin/contracts/ledger").then((r) => r.json());
+    if (!d.settled_markets) { box.innerHTML = ""; return; }
+
+    box.innerHTML = `
+      <p class="sub" style="margin:0.8rem 0 0.4rem">
+        After ${d.settled_markets} settled: you are
+        <strong class="${d.house < 0 ? "err" : ""}">${money(d.house)}</strong>
+      </p>
+      <div class="wrap"><table>
+        <thead><tr><th>Manager</th><th class="num">Owes you</th></tr></thead>
+        <tbody>${d.managers.map((m) => `
+          <tr><td>${escape(m.manager)}</td>
+          <td class="num ${m.net > 0 ? "" : "err"}">${money(-m.net)}</td></tr>`).join("")}
+        </tbody>
+      </table></div>`;
+  }
+
+  document.getElementById("new-slate").addEventListener("click", () => {
+    const box = document.getElementById("slate-form");
+    box.hidden = !box.hidden;
+    if (box.hidden) return;
+    box.innerHTML = `
+      <div class="bar">
+        <input type="search" id="slate-name" placeholder="Slate name" value="Draft night">
+        <input type="search" id="slate-start" placeholder="2026-09-01T18:30:00-05:00"
+               value="2026-09-01T18:30:00-05:00">
+        <button id="save-slate">Open it</button>
+      </div>
+      <p class="note">Opens on the Tuesday 9am before that time, and closes when the draft starts.</p>`;
+
+    document.getElementById("save-slate").addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      const r = await fetch("/api/admin/contracts/slates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: document.getElementById("slate-name").value,
+          kind: "draft",
+          draft_start: document.getElementById("slate-start").value,
+        }),
+      });
+      const d = await r.json();
+      e.target.textContent = r.ok
+        ? `Opens ${when(d.slate.opens_at)}`
+        : `Failed: ${d.detail || r.status}`;
+      if (r.ok) await loadContracts();
+      setTimeout(() => { e.target.disabled = false; e.target.textContent = "Open it"; }, 3000);
+    });
+  });
+
+  document.getElementById("settle").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = "Settling…";
+    try {
+      const d = await fetch("/api/admin/contracts/resolve", { method: "POST" })
+        .then((r) => r.json());
+      e.target.textContent = d.settled?.length
+        ? `Settled ${d.settled.length}` + (d.waiting.length ? `, ${d.waiting.length} waiting` : "")
+        : `Nothing answerable yet` + (d.waiting?.length ? ` (${d.waiting.length} waiting)` : "");
+      await loadContracts();
+    } catch (err) {
+      e.target.textContent = `Failed: ${err}`;
+    } finally {
+      setTimeout(() => {
+        e.target.disabled = false;
+        e.target.textContent = "Settle what the draft has answered";
+      }, 3000);
+    }
+  });
+
+  // Only offered while a market is untraded: after that it is somebody's
+  // position and removing it would take real money off the board.
+  document.addEventListener("click", async (e) => {
+    const drop = e.target.closest("[data-drop]");
+    if (!drop) return;
+    drop.disabled = true;
+    const r = await fetch(`/api/admin/contracts/markets/${drop.dataset.drop}`,
+                          { method: "DELETE" });
+    if (r.ok) return loadContracts();
+    drop.textContent = `Failed: ${(await r.json()).detail || r.status}`;
+  });
+
+  document.getElementById("refresh-contracts").addEventListener("click", loadContracts);
+  loadContracts();
 
   // -------------------------------------------------- Sleeper cross-check
 
