@@ -105,6 +105,19 @@
   body.show-codes .codes-col { display: table-cell; }
   code { font-family: ui-monospace, Consolas, monospace; letter-spacing: 0.08em; }
   .pending { color: var(--ink-3); font-style: italic; }
+  .pill {
+    display: inline-block; padding: 0.1rem 0.45rem; border-radius: 999px;
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em;
+    border: 1px solid currentColor;
+  }
+  .pill.bad { color: var(--danger); }
+  .pill.warn { color: var(--warn, #a86a1a); }
+  .pill.good { color: var(--accent); }
+  .pill.idle { color: var(--ink-3); }
+  @media (prefers-color-scheme: dark) { .pill.warn { color: #e0b062; } }
+  .steps { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; color: var(--ink-2); }
+  .steps li { margin: 0.15rem 0; }
+  .steps code { color: var(--ink); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -161,7 +174,12 @@
       <div class="bar">
         <button id="sync">Sync league from Sleeper</button>
         <button id="toggle-codes" aria-pressed="false">Show codes</button>
+        <button id="verify">Check against Sleeper</button>
+        <button id="toggle-entry" aria-pressed="false">Entry list</button>
       </div>
+
+      <div id="entry-list" hidden></div>
+      <div id="verify-out"></div>
 
       <div class="wrap">
         <table>
@@ -487,6 +505,90 @@
         e.target.textContent = "Sync league from Sleeper";
       }, 2500);
     }
+  });
+
+  // -------------------------------------------------- Sleeper cross-check
+
+  // Sleeper's API cannot be written to, so these twelve rows get typed into
+  // its commissioner UI by hand once a year. It does publish assigned keepers
+  // before the draft starts, which is what makes the mistakes findable while
+  // there is still time to fix them.
+  const PILL = {
+    mismatch:    ["bad",  "wrong player"],
+    wrong_round: ["bad",  "wrong round"],
+    missing:     ["warn", "not entered"],
+    unexpected:  ["warn", "not chosen here"],
+    match:       ["good", "agrees"],
+    pending:     ["idle", "no keeper yet"],
+  };
+
+  const side = (name, round) =>
+    name ? `${escape(name)} <span class="muted">R${round}</span>` : '<span class="pending">—</span>';
+
+  document.getElementById("verify").addEventListener("click", async (e) => {
+    const out = document.getElementById("verify-out");
+    e.target.disabled = true;
+    e.target.textContent = "Checking…";
+    out.innerHTML = '<p class="muted">Reading the Sleeper draft board…</p>';
+    try {
+      const r = await fetch("/api/admin/keepers/verify");
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+
+      const headline = d.needs_action
+        ? `<span class="err">${d.needs_action} to fix</span> · ${d.agreed} agree`
+        : `<span>All ${d.agreed} agree with Sleeper.</span>`;
+
+      out.innerHTML = `
+        <p class="sub" style="margin:0 0 0.6rem">
+          ${headline} · draft ${escape(d.draft_status)}
+        </p>
+        <div class="wrap">
+          <table>
+            <thead><tr>
+              <th class="num">Slot</th><th>Manager</th><th></th>
+              <th>Chosen here</th><th>In Sleeper</th>
+            </tr></thead>
+            <tbody>${d.rows.map((row) => {
+              const [tone, label] = PILL[row.status] || ["idle", row.status];
+              return `<tr>
+                <td class="num">${row.draft_slot ?? "—"}</td>
+                <td>${escape(row.manager || "—")}</td>
+                <td><span class="pill ${tone}">${label}</span></td>
+                <td>${side(row.ours_name, row.ours_round)}</td>
+                <td>${side(row.theirs_name, row.theirs_round)}</td>
+              </tr>`;
+            }).join("")}</tbody>
+          </table>
+        </div>`;
+      e.target.textContent = d.needs_action ? `${d.needs_action} to fix` : "All agree";
+    } catch (err) {
+      out.innerHTML = `<p class="err">Could not check: ${escape(String(err.message || err))}</p>`;
+      e.target.textContent = "Failed";
+    } finally {
+      setTimeout(() => {
+        e.target.disabled = false;
+        e.target.textContent = "Check against Sleeper";
+      }, 3000);
+    }
+  });
+
+  // The list to work down while typing them into Sleeper: draft order, slot
+  // and round together, so nothing has to be cross-referenced mid-entry.
+  document.getElementById("toggle-entry").addEventListener("click", async (e) => {
+    const box = document.getElementById("entry-list");
+    const showing = e.target.getAttribute("aria-pressed") === "true";
+    e.target.setAttribute("aria-pressed", String(!showing));
+    box.hidden = showing;
+    if (showing) return;
+
+    const chosen = (await fetch("/api/keeper/import").then((r) => r.json())).keepers;
+    box.innerHTML = chosen.length
+      ? `<ol class="steps">${chosen.map((k) =>
+          `<li>Slot <code>${k.draft_slot ?? k.team_slot}</code> ${escape(k.manager)} — ` +
+          `<code>${escape(k.player_name)}</code> in round <code>${k.round}</code></li>`
+        ).join("")}</ol>`
+      : '<p class="muted">Nobody has chosen a keeper yet.</p>';
   });
 
   document.getElementById("toggle-codes").addEventListener("click", (e) => {

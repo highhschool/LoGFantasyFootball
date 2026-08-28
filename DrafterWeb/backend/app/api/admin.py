@@ -17,6 +17,7 @@ from ..admin import require_admin
 from .. import config as app_config
 from ..integrations.sleeper import SleeperClient, SleeperError
 from ..core.engine import replay
+from ..core.keeper_verify import compare, summarize
 from ..core.rankings import PlayerPool
 from ..store import SessionStore
 
@@ -152,6 +153,39 @@ def keeper_codes(
     """The per-manager codes, to send out. Behind Access, like everything here."""
     require_admin(request)
     return {"managers": store.managers(with_codes=True)}
+
+
+@router.get("/keepers/verify")
+def keeper_verify(
+    request: Request,
+    store: SessionStore = Depends(get_store),
+    client: SleeperClient = Depends(get_client),
+) -> dict:
+    """Diff this league's chosen keepers against the Sleeper draft board.
+
+    Sleeper cannot be written to, so the keepers get typed into its
+    commissioner UI by hand -- and it publishes them before the draft starts,
+    which makes the mistakes findable while there is still time to fix them.
+    """
+    require_admin(request)
+
+    league = app_config.SLEEPER_LEAGUE_ID
+    if not league:
+        raise HTTPException(status_code=503, detail="no league configured")
+
+    try:
+        draft = client.latest_draft(league)
+        picks = client.picks(draft.draft_id)
+    except SleeperError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    rows = compare(store.all_keepers(), picks)
+    return {
+        "draft_id": draft.draft_id,
+        "draft_status": draft.status,
+        "rows": [r.as_dict() for r in rows],
+        **summarize(rows),
+    }
 
 
 @router.post("/keepers/sync")
