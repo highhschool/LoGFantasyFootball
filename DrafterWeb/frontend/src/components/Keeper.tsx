@@ -65,7 +65,7 @@ export function Keeper({ onBack }: Props) {
   return (
     <Shell onBack={onBack} deadline={state}>
       <p className="text-sm text-ink-2">
-        {state.you.team_name || state.you.display_name} —{" "}
+        {state.you.display_name || state.you.team_name} —{" "}
         {chosen ? (
           <>
             keeping <strong className="text-ink">{chosen.name}</strong> in round{" "}
@@ -188,15 +188,15 @@ function Claim({ onClaimed }: { onClaimed: () => void }) {
     <section className="flex flex-col gap-4 rounded-lg border border-rule bg-surface p-5">
       <div>
         <h2 className="text-sm font-semibold tracking-wider text-ink-3 uppercase">
-          Which team are you?
+          Who are you?
         </h2>
         <p className="mt-1 text-sm text-ink-3">
-          Pick your team and enter the code you were sent.
+          Find your name and enter the code you were sent.
         </p>
       </div>
 
       <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-ink-2">Team</span>
+        <span className="text-sm font-medium text-ink-2">Manager</span>
         <select
           value={userId}
           onChange={(e) => setUserId(e.target.value)}
@@ -205,7 +205,8 @@ function Claim({ onClaimed }: { onClaimed: () => void }) {
           <option value="">Choose…</option>
           {managers.map((m) => (
             <option key={m.user_id} value={m.user_id}>
-              {m.team_name || m.display_name}
+              {m.display_name || m.team_name}
+              {m.team_name && m.display_name ? ` — ${m.team_name}` : ""}
             </option>
           ))}
         </select>

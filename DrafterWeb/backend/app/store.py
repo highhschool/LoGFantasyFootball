@@ -276,7 +276,7 @@ class SessionStore:
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM keeper_managers ORDER BY"
-                " CASE WHEN team_name = '' THEN display_name ELSE team_name END"
+                " CASE WHEN display_name = '' THEN team_name ELSE display_name END"
             ).fetchall()
 
         out = []

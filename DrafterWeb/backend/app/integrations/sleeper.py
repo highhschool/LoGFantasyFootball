@@ -66,7 +66,13 @@ class Manager:
 
     @property
     def label(self) -> str:
-        return self.team_name or self.display_name
+        """The manager, not the team.
+
+        Team names are jokes that change between seasons, and two of the
+        league have not set one at all; a Sleeper account always has a
+        display name.
+        """
+        return self.display_name or self.team_name
 
 
 @dataclass(frozen=True, slots=True)

@@ -100,7 +100,7 @@
     <table>
       <thead>
         <tr>
-          <th>Team</th><th>Manager</th><th class="codes-col">Code</th>
+          <th>Manager</th><th>Team</th><th class="codes-col">Code</th>
           <th>Keeper</th><th class="num">ADP</th><th class="num">Round</th>
           <th>Chosen</th>
         </tr>
@@ -259,8 +259,8 @@
         const claimed = m.claimed ? "yes" : "not yet";
         return `
         <tr>
-          <td>${escape(k.team_name || "—")}</td>
-          <td class="muted">${escape(k.display_name || "")}</td>
+          <td>${escape(k.display_name || "—")}</td>
+          <td class="muted">${escape(k.team_name || "")}</td>
           <td class="codes-col"><code>${escape(m.code || "")}</code> <span class="muted">${claimed}</span></td>
           <td>${k.player_name
             ? escape(k.position + " " + k.player_name + " (" + k.nfl_team + ")")
