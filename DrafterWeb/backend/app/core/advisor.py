@@ -35,7 +35,14 @@ BYE_PENALTY = 2.0       # would put a third starter on one bye week
 # What a position you have already filled is worth. Low enough that a real
 # need outranks a steeper drop elsewhere, high enough that the option is still
 # offered -- the limits are a plan, and the board does not always cooperate.
+# Divided again by how far past the plan you already are, so a fourth
+# quarterback sinks further than a third.
 FILLED_POSITION_WEIGHT = 0.25
+
+# The leading position is the actual decision, so it gets a second name: the
+# runner-up there is more use than the best player at a position you do not
+# need. Everything below it offers one.
+DEPTH_AT_TOP = 2
 
 # Beyond this, being early or late stops telling you anything new. Without it,
 # at pick 1 every deep player scores as hundreds of picks of "value", and a
@@ -183,9 +190,26 @@ def _reasons(
     need: int,
     bye_clash: bool,
     until: int | None,
+    behind: Player | None = None,
 ) -> list[str]:
-    """What actually bears on this pick, most decisive first."""
+    """What actually bears on this pick, most decisive first.
+
+    `behind` marks the runner-up at a position. The drop and the tier count
+    describe the top of that position, so repeating them here would contradict
+    itself -- "only 1 TE left at this level" cannot be true of the second one.
+    """
     said: list[str] = []
+
+    if behind is not None:
+        said.append(f"the next {player.position} behind {behind.name}")
+        if value >= 5:
+            said.append(f"fallen {value:.0f} picks past his own ADP")
+        if player.bye_week is not None and behind.bye_week != player.bye_week:
+            said.append(f"a different bye ({player.bye_week}) to {behind.name}")
+        if bye_clash and player.bye_week is not None:
+            said.append(f"would be a third starter on the week {player.bye_week} bye")
+        return said
+
     position = player.position
     holds_up = view.dropoff < 3 or view.likely_later.key == player.key
 
@@ -216,8 +240,12 @@ def _reasons(
 
     if need == 1:
         said.append(f"your last {position} spot")
-    elif need <= 0:
+    elif need == 0:
         said.append(f"you have already filled {position} — this would be extra")
+    elif need < 0:
+        said.append(
+            f"you are {abs(need)} over your plan at {position} already"
+        )
 
     if survival >= 0.5 and not holds_up:
         said.append(f"he is {survival:.0%} to still be there himself")
@@ -265,52 +293,69 @@ def recommend(
     for player in eligible:
         by_position.setdefault(player.position, []).append(player)
 
-    advice: list[Advice] = []
+    # Score each position once, on its best available player.
+    scored: list[tuple[float, Outlook, int]] = []
     for position, players in by_position.items():
         view = outlook(players, now, until, state.config.teams)
         if view is None:
             continue
 
-        player = view.best_now
-        need = max(0, needs.get(position, 0))
-        survival = survival_probability(player, now, until)
-        value = now - player.adp
-        bye_clash = player.bye_week is not None and byes.count(player.bye_week) >= 2
+        need = needs.get(position, 0)
+        need_share = max(0, need) / spots_left
+        weight = (
+            1.0 + need_share
+            if need > 0
+            else FILLED_POSITION_WEIGHT / (1 + abs(need))
+        )
+        value = now - view.best_now.adp
 
-        # Urgency is what waiting costs here, weighted by how much of your
-        # remaining roster this position still has to fill. A steep drop at a
-        # position you have already filled is not your problem.
-        need_share = need / spots_left
-        weight = 1.0 + need_share if need > 0 else FILLED_POSITION_WEIGHT
         score = (
             WEIGHT_DROPOFF * (view.dropoff / 10.0) * weight
             + WEIGHT_VALUE * (max(-VALUE_CAP, min(VALUE_CAP, value)) / 10.0)
-            - (BYE_PENALTY if bye_clash else 0.0)
         )
+        scored.append((score, view, need))
 
-        advice.append(
-            Advice(
-                player=player,
-                score=score,
-                survival=survival,
-                value=value,
-                need=need,
-                bye_clash=bye_clash,
-                gone_by_next=survival < 0.25,
-                dropoff=view.dropoff,
-                alternative=view.likely_later.name,
-                alternative_adp=view.likely_later.adp,
-                tier_remaining=view.tier_remaining,
-                reasons=_reasons(player, view, survival, value, need, bye_clash, until),
-            )
-        )
-
-    # ADP breaks ties, so equal urgency falls back to consensus order.
-    advice.sort(key=lambda a: (-a.score, a.player.adp))
+    scored.sort(key=lambda row: (-row[0], row[1].best_now.adp))
 
     # A position where waiting costs nothing is not a decision. Suggesting a
     # kicker in round 1 because he is the best kicker left is noise; these
-    # surface on their own once the board starts to thin. At least three
-    # options are always offered so the panel never collapses to one.
-    pressing = [a for a in advice if a.dropoff >= 1.0]
-    return (pressing if len(pressing) >= 3 else advice[:3])[:limit]
+    # surface on their own once the board thins. At least three options are
+    # always offered so the panel never collapses to one.
+    pressing = [row for row in scored if row[1].dropoff >= 1.0]
+    chosen = pressing if len(pressing) >= 3 else scored[:3]
+
+    advice: list[Advice] = []
+    for rank, (score, view, need) in enumerate(chosen):
+        position = view.position
+        depth = DEPTH_AT_TOP if rank == 0 else 1
+
+        for offset, player in enumerate(
+            sorted(by_position[position], key=lambda p: p.adp)[:depth]
+        ):
+            survival = survival_probability(player, now, until)
+            value = now - player.adp
+            bye_clash = player.bye_week is not None and byes.count(player.bye_week) >= 2
+
+            advice.append(
+                Advice(
+                    player=player,
+                    # The runner-up sits just below his own position, never
+                    # above it, whatever his own value happens to be.
+                    score=score - 0.001 * offset - (BYE_PENALTY if bye_clash else 0.0),
+                    survival=survival,
+                    value=value,
+                    need=need,
+                    bye_clash=bye_clash,
+                    gone_by_next=survival < 0.25,
+                    dropoff=view.dropoff,
+                    alternative=view.likely_later.name,
+                    alternative_adp=view.likely_later.adp,
+                    tier_remaining=view.tier_remaining,
+                    reasons=_reasons(
+                        player, view, survival, value, need, bye_clash, until,
+                        behind=view.best_now if offset else None,
+                    ),
+                )
+            )
+
+    return advice[:limit]

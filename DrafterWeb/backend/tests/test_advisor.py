@@ -129,14 +129,41 @@ class TestOutlook:
 
 
 class TestRecommendations:
-    def test_it_offers_one_player_per_position(self, state, pool_2025):
-        """Five names from two positions is two decisions dressed as five."""
-        positions = [a.player.position for a in recommend(state, pool_2025, limit=8)]
-        assert len(positions) == len(set(positions))
+    def test_only_the_leading_position_offers_two_names(self, state, pool_2025):
+        """Five names from two positions is two decisions dressed as five.
 
-    def test_each_is_the_best_available_at_its_position(self, state, pool_2025):
-        for a in recommend(state, pool_2025, limit=8):
-            assert a.player.key == at_position(pool_2025, a.player.position)[0].key
+        The position that actually matters gets a runner-up; everything below
+        it offers one, so the list stays a choice between positions.
+        """
+        positions = [a.player.position for a in recommend(state, pool_2025, limit=8)]
+        counts = {p: positions.count(p) for p in set(positions)}
+
+        assert counts[positions[0]] == 2, "the leading position offers an alternative"
+        assert all(n == 1 for p, n in counts.items() if p != positions[0])
+        assert positions[:2] == [positions[0], positions[0]], "its two sit together"
+
+    def test_each_position_leads_with_its_best_available(self, state, pool_2025):
+        advice = recommend(state, pool_2025, limit=8)
+        seen: set[str] = set()
+        for a in advice:
+            position = a.player.position
+            if position in seen:
+                continue  # the runner-up at the leading position
+            seen.add(position)
+            assert a.player.key == at_position(pool_2025, position)[0].key
+
+    def test_the_runner_up_is_the_second_best_at_his_position(self, state, pool_2025):
+        advice = recommend(state, pool_2025, limit=8)
+        leader, runner_up = advice[0], advice[1]
+        assert runner_up.player.position == leader.player.position
+        assert runner_up.player.key == at_position(pool_2025, leader.player.position)[1].key
+
+    def test_the_runner_up_does_not_repeat_the_leader_reasoning(self, state, pool_2025):
+        """"only 1 TE left at this level" cannot be true of the second one."""
+        runner_up = recommend(state, pool_2025, limit=8)[1]
+        assert any("the next" in r for r in runner_up.reasons)
+        assert not any("at this level" in r for r in runner_up.reasons)
+        assert not any(r.startswith("Next probable pick:") for r in runner_up.reasons)
 
     def test_it_is_ranked_by_urgency(self, state, pool_2025):
         scores = [a.score for a in recommend(state, pool_2025, limit=8)]
@@ -231,7 +258,15 @@ class TestReasoning:
         log = [LoggedPick(p.key) for p in pool_2025.players[:28]]
         state = replay(config, pool_2025, log)
 
-        steep = [a for a in recommend(state, pool_2025, limit=8) if a.dropoff >= 3]
+        advice = recommend(state, pool_2025, limit=8)
+        # Skip the runner-up, which describes itself rather than its position.
+        leaders, seen = [], set()
+        for a in advice:
+            if a.player.position not in seen:
+                seen.add(a.player.position)
+                leaders.append(a)
+
+        steep = [a for a in leaders if a.dropoff >= 3]
         assert steep, "expected at least one position under pressure"
         for a in steep:
             assert a.alternative
@@ -285,3 +320,49 @@ class TestAdviceEndpoints:
         after = mock_client.get(f"/api/sessions/{session['id']}/advice").json()["advice"]
 
         assert before and after == []
+
+
+class TestOverfilledPositions:
+    """Going past your plan should sink a position further each time."""
+
+    @staticmethod
+    def _with_quarterbacks(pool, config, count):
+        qbs = [p for p in pool.players if p.position == "QB"][:count]
+        others = iter(p for p in pool.players if p.position != "QB")
+        mine = {1, 24, 25, 48, 49, 72, 73}
+        log, taken = [], 0
+        for overall in range(1, 74):
+            if overall in mine and taken < count:
+                log.append(LoggedPick(qbs[taken].key))
+                taken += 1
+            else:
+                log.append(LoggedPick(next(others).key))
+        return replay(config, pool, log)
+
+    def test_a_fourth_quarterback_ranks_below_a_third(self, config, pool_2025):
+        def qb_rank(count):
+            state = self._with_quarterbacks(pool_2025, config, count)
+            advice = recommend(state, pool_2025, limit=8)
+            return next(
+                (i for i, a in enumerate(advice) if a.player.position == "QB"), 99
+            )
+
+        assert qb_rank(4) >= qb_rank(2), "going further over must not help"
+
+    def test_it_says_how_far_over_you_are(self, config, pool_2025):
+        state = self._with_quarterbacks(pool_2025, config, 4)
+        assert state.team(1).needs(config.position_limits)["QB"] == -2
+
+        qb = next(
+            (a for a in recommend(state, pool_2025, limit=8) if a.player.position == "QB"),
+            None,
+        )
+        assert qb is not None, "still offered -- the limits are a suggestion"
+        assert qb.need == -2, "the real figure, not clamped to zero"
+        assert any("2 over your plan" in r for r in qb.reasons)
+
+    def test_positions_you_need_still_lead(self, config, pool_2025):
+        state = self._with_quarterbacks(pool_2025, config, 4)
+        advice = recommend(state, pool_2025, limit=8)
+        assert advice[0].player.position != "QB"
+        assert advice[0].need > 0
