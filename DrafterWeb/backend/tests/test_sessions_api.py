@@ -292,51 +292,53 @@ class TestKeepersPerTeam:
         assert "slot 11" in r.json()["detail"]
 
 
-class TestDeepDrafts:
-    """Rounds beyond the default 15-spot roster."""
+class TestRoundCap:
+    """The league drafts 15 rounds, and the default roster holds 15 players."""
 
-    @staticmethod
-    def _ceiling(client, teams=12):
-        return client.get(f"/api/roster-capacity?teams={teams}").json()["max_rounds"]
+    def test_fifteen_rounds_is_the_default(self, client):
+        assert new_session(client)["config"]["rounds"] == 15
 
-    @pytest.mark.parametrize("offset", [1, 3])
-    def test_a_deep_draft_starts_and_completes(self, client, offset):
-        # Deeper than the 15-spot default roster, but within this pool.
-        rounds = min(15 + offset, self._ceiling(client))
-        state = new_session(client, rounds=rounds, teams=12, your_slot=6)
-        assert sum(state["config"]["position_limits"].values()) >= rounds
-
+    def test_a_full_fifteen_round_draft_completes(self, client):
+        state = new_session(client, rounds=15, teams=12)
         final = client.post(f"/api/sessions/{state['id']}/simulate").json()
         assert final["complete"] is True
-        assert len(final["picks"]) == 12 * rounds
-        assert len(final["your_roster"]) == rounds
+        assert len(final["picks"]) == 180
+        assert len(final["your_roster"]) == 15
 
-    def test_a_deep_draft_has_no_duplicate_players(self, client):
-        state = new_session(client, rounds=self._ceiling(client), teams=12)
+    def test_no_duplicate_players_in_a_full_draft(self, client):
+        state = new_session(client, rounds=15, teams=12)
         final = client.post(f"/api/sessions/{state['id']}/simulate").json()
         names = [p["player_name"] for p in final["picks"]]
         assert len(names) == len(set(names))
 
-    def test_beyond_the_pool_is_rejected_with_a_reason(self, client):
-        too_deep = self._ceiling(client) + 10
-        r = client.post(
-            "/api/sessions", json={"teams": 12, "rounds": too_deep, "your_slot": 1}
-        )
-        assert r.status_code == 422
-        assert f"cannot run {too_deep} rounds" in r.json()["detail"]
-
-    def test_capacity_endpoint_matches_what_is_accepted(self, client):
-        capacity = client.get("/api/roster-capacity?teams=12").json()
-        ceiling = capacity["max_rounds"]
-
+    @pytest.mark.parametrize("rounds", [16, 20, 40])
+    def test_more_than_fifteen_is_rejected(self, client, rounds):
         assert client.post(
-            "/api/sessions", json={"teams": 12, "rounds": ceiling, "your_slot": 1}
-        ).status_code == 200
-        assert client.post(
-            "/api/sessions", json={"teams": 12, "rounds": ceiling + 1, "your_slot": 1}
+            "/api/sessions", json={"teams": 12, "rounds": rounds, "your_slot": 1}
         ).status_code == 422
 
-    def test_bigger_leagues_run_shallower(self, client):
-        wide = client.get("/api/roster-capacity?teams=14").json()["max_rounds"]
-        narrow = client.get("/api/roster-capacity?teams=8").json()["max_rounds"]
-        assert wide < narrow
+    def test_shorter_drafts_are_still_allowed(self, client):
+        state = new_session(client, rounds=8)
+        final = client.post(f"/api/sessions/{state['id']}/simulate").json()
+        assert final["complete"] and len(final["your_roster"]) == 8
+
+    def test_a_pool_too_thin_for_the_league_fails_cleanly(self, client):
+        """Must read as a rejected config, never a 500 mid-creation."""
+        r = client.post("/api/sessions", json={"teams": 32, "rounds": 15, "your_slot": 1})
+        assert r.status_code in (200, 422)
+        if r.status_code == 422:
+            assert "pool" in r.json()["detail"].lower()
+
+    def test_every_offered_team_size_completes(self, client):
+        """A draft that stops short reads like success, so it must not happen."""
+        for teams in (8, 10, 12):
+            state = new_session(client, teams=teams, rounds=15, your_slot=1)
+            final = client.post(f"/api/sessions/{state['id']}/simulate").json()
+            assert final["complete"] is True, f"{teams} teams did not finish"
+            assert len(final["picks"]) == teams * 15
+
+    def test_a_league_the_pool_cannot_fill_is_rejected(self, client):
+        r = client.post("/api/sessions", json={"teams": 14, "rounds": 15, "your_slot": 1})
+        assert r.status_code == 422
+        detail = r.json()["detail"]
+        assert "player pool only has" in detail

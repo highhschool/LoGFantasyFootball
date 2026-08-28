@@ -19,7 +19,7 @@ from . import config
 from .api import sessions
 from .core.models import DraftConfig, RankingsError
 from .core.order import build_board, picks_for_slot
-from .core import adp, roster
+from .core import adp
 from .core.rankings import PlayerPool, build_pool
 from .store import SessionStore
 
@@ -163,7 +163,7 @@ def list_players(
 @app.get("/api/board")
 def board(
     teams: int = Query(12, ge=2, le=32),
-    rounds: int = Query(15, ge=1, le=40),
+    rounds: int = Query(15, ge=1, le=15),
     your_slot: int = Query(6, ge=1),
 ) -> dict:
     """The empty draft board for a config. Keepers are not wired up until P1."""
@@ -181,25 +181,6 @@ def board(
         "your_slot": your_slot,
         "your_picks": picks_for_slot(draft, your_slot),
         "board": cells,
-    }
-
-
-@app.get("/api/roster-capacity")
-def roster_capacity(teams: int = Query(12, ge=2, le=32)) -> dict:
-    """How deep a draft this league size can actually run.
-
-    The setup screen uses it to cap the rounds control, so an impossible
-    combination is unreachable rather than an error after pressing start.
-    """
-    pool = _require_pool()
-    capacity = roster.pool_capacity(pool, teams)
-    max_rounds = sum(capacity.values())
-
-    return {
-        "teams": teams,
-        "max_rounds": max_rounds,
-        "per_position": capacity,
-        "suggested": roster.auto_limits(pool, teams, min(15, max_rounds)),
     }
 
 

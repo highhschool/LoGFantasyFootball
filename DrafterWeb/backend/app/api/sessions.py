@@ -17,7 +17,6 @@ from ..core.engine import DraftError, DraftState, LoggedPick, append_pick, repla
 from ..core.models import ConfigError, DraftConfig, Keeper
 from ..core.order import picks_until_next
 from ..core.rankings import PlayerPool
-from ..core.roster import auto_limits
 from ..store import SessionStore
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -34,7 +33,8 @@ class KeeperIn(BaseModel):
 class SessionIn(BaseModel):
     name: str = ""
     teams: int = Field(default=12, ge=2, le=32)
-    rounds: int = Field(default=15, ge=1, le=40)
+    # The league drafts 15 rounds, and the default roster limits sum to 15.
+    rounds: int = Field(default=15, ge=1, le=15)
     your_slot: int = Field(default=6, ge=1)
     randomness: float = Field(default=1.0, ge=0.0, le=3.0)
     seed: int | None = None
@@ -147,6 +147,26 @@ def _run_bots(session: dict, pool: PlayerPool, log: list[LoggedPick]) -> list[Lo
     return log
 
 
+def _check_pool_depth(pool: PlayerPool, draft: DraftConfig) -> None:
+    """Reject a league the player pool cannot actually fill.
+
+    Without this the draft simply runs dry -- 14 teams needs 28 tight ends and
+    the pool holds 27, so the board stops two picks short and reports itself
+    incomplete, which reads like success. A wrong answer that looks right is
+    worse than an error.
+    """
+    from collections import Counter
+
+    have = Counter(p.position for p in pool.players)
+    for position, limit in draft.position_limits.items():
+        needed = limit * draft.teams
+        if needed > have.get(position, 0):
+            raise ConfigError(
+                f"a {draft.teams}-team draft needs {needed} {position}s but the "
+                f"player pool only has {have.get(position, 0)}. Use fewer teams."
+            )
+
+
 def _load_or_404(store: SessionStore, session_id: str) -> dict:
     session = store.load(session_id)
     if session is None:
@@ -162,13 +182,7 @@ def create_session(
     pool: PlayerPool = Depends(get_pool),
     store: SessionStore = Depends(get_store),
 ) -> dict:
-    # Defaults sum to 15, so a deeper draft needs more roster spots than the
-    # league's usual shape allows. Grow them to fit, bounded by pool depth.
-    try:
-        limits = body.position_limits or auto_limits(pool, body.teams, body.rounds)
-    except ConfigError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
+    limits = body.position_limits or dict(DraftConfig(year=app_config.SEASON).position_limits)
     draft = DraftConfig(
         year=app_config.SEASON,
         teams=body.teams,
@@ -182,6 +196,7 @@ def create_session(
         from ..core.order import validate_config
 
         validate_config(draft)
+        _check_pool_depth(pool, draft)
     except ConfigError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -192,8 +207,14 @@ def create_session(
     )
     session = _load_or_404(store, session_id)
 
-    # Run the bots picking ahead of the user's first pick.
-    log = _run_bots(session, pool, [])
+    # Run the bots picking ahead of the user's first pick. A pool too thin for
+    # this league size runs dry here, and must read as a rejected config rather
+    # than a server error.
+    try:
+        log = _run_bots(session, pool, [])
+    except DraftError as exc:
+        store.delete(session_id)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     store.save_log(session_id, log)
 
     return _serialize(session, replay(draft, pool, log), pool)

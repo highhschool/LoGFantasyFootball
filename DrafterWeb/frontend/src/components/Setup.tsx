@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { api, type RosterCapacity } from "../api";
+import { useState } from "react";
 import type { AdpProvenance } from "../api";
 import type { KeeperDraft, NewSession, SessionSummary } from "../types";
 import { AdpBadge } from "./AdpBadge";
@@ -36,29 +35,6 @@ export function Setup({
   const [pickSeconds, setPickSeconds] = useState(0);
   const [name, setName] = useState("");
   const [keepers, setKeepers] = useState<KeeperDraft[]>([]);
-  const [capacity, setCapacity] = useState<RosterCapacity | null>(null);
-
-  // How deep a draft this league size can fill is a property of the player
-  // pool, so ask the server rather than guessing. Rounds are clamped to it,
-  // which makes an impossible combination unreachable instead of an error
-  // after pressing start.
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .rosterCapacity(teams)
-      .then((c) => {
-        if (cancelled) return;
-        setCapacity(c);
-        setRounds((r) => Math.min(r, c.max_rounds));
-      })
-      .catch(() => {
-        if (!cancelled) setCapacity(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [teams]);
-
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
       <header>
@@ -85,7 +61,7 @@ export function Setup({
               }}
               className="w-full rounded-md border border-rule bg-ground px-3 py-2"
             >
-              {[8, 10, 12, 14].map((n) => (
+              {[8, 10, 12].map((n) => (
                 <option key={n} value={n}>
                   {n}
                 </option>
@@ -93,23 +69,15 @@ export function Setup({
             </select>
           </Field>
 
-          <Field
-            label={
-              capacity
-                ? `Rounds — up to ${capacity.max_rounds} for ${teams} teams`
-                : "Rounds"
-            }
-          >
+          <Field label="Rounds">
             <input
               type="number"
               min={1}
-              max={capacity?.max_rounds ?? 20}
+              max={15}
               value={rounds}
-              onChange={(e) => {
-                const next = Number(e.target.value);
-                const cap = capacity?.max_rounds ?? 20;
-                setRounds(Math.max(1, Math.min(next, cap)));
-              }}
+              onChange={(e) =>
+                setRounds(Math.max(1, Math.min(Number(e.target.value), 15)))
+              }
               className="w-full rounded-md border border-rule bg-ground px-3 py-2"
             />
           </Field>
@@ -160,13 +128,6 @@ export function Setup({
           <p className="mt-3 text-sm text-ink-3">
             When the clock runs out your pick is made for you, the same as a real
             draft. It only runs on your turn.
-          </p>
-        )}
-
-        {capacity && rounds > 15 && (
-          <p className="mt-3 text-sm text-ink-3">
-            Past 15 rounds the roster limits expand to fit, bounded by how deep
-            the player pool runs at each position.
           </p>
         )}
 

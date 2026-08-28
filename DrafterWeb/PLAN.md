@@ -181,7 +181,8 @@ The domain also unlocks **Cloudflare Access**, which is what saves us from writi
 optional keeper slotting, FastAPI service, Docker and tunnel config.
 
 **P1 — Mock sandbox. DONE.** Event-log engine, ADP-jittered bots, React UI,
-session persistence, pick clock, keeper editor, slot picker, rename. Live at
+session persistence, pick clock, keeper editor, slot picker, rename. Drafts are
+fixed at 15 rounds, matching the league and the 15-spot default roster. Live at
 <https://ngfldrafter.com>.
 
 **P2 — Live assistant. NEXT.** See the handoff below.
@@ -205,7 +206,7 @@ The event model already supports it: other slots become pick source `remote`.
 - `core/names.py` — `player_key()`, normalization, DST-by-team matching
 - `core/roster.py` — pool-bounded position limits
 - `api/sessions.py` — mock draft routes
-- 196 tests, offline, `cd backend && python -m pytest -q`
+- 189 tests, offline, `cd backend && python -m pytest -q`
 
 ### Already proven for P2
 
