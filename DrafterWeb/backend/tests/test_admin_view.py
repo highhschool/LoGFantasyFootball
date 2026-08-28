@@ -7,6 +7,8 @@ stranger, and it never turns into a way to change anything.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -126,14 +128,44 @@ class TestSeeingEverySession:
         assert client.get("/api/admin/sessions/nope", headers=ADMIN).status_code == 404
 
 
-class TestItStaysReadOnly:
-    """Viewing is one thing; deleting someone's draft is a larger blast radius."""
+class TestItDestroysNothing:
+    """Viewing is one thing; deleting someone's draft is a larger blast radius.
 
-    def test_no_route_changes_anything(self):
+    Stated as "no route changes anything" at first, which the keeper sync then
+    broke by being a POST. The rule was never about the verb -- it is that
+    nothing behind this gate can destroy or rewrite what anyone else made.
+    """
+
+    def test_nothing_deletes_or_replaces(self):
         from app.api.admin import router
 
         for route in router.routes:
-            assert route.methods == {"GET"}, f"{route.path} is not read-only"
+            assert not route.methods & {"DELETE", "PUT", "PATCH"}, route.path
+
+    def test_the_only_write_is_the_league_sync(self):
+        from app.api.admin import router
+
+        writes = {
+            route.path for route in router.routes if route.methods - {"GET", "HEAD"}
+        }
+        assert writes == {"/api/admin/keepers/sync"}
+
+    def test_that_sync_is_additive_and_idempotent(self, client, monkeypatch):
+        """It mints codes for new managers and leaves existing ones alone."""
+        from app.integrations.sleeper import Manager, SleeperClient
+
+        class Fake(SleeperClient):
+            def league_managers(self, league_id):
+                return [Manager(user_id="m1", display_name="a", team_name="A")]
+
+        monkeypatch.setattr(main, "_sleeper", Fake(cache_dir=Path(".")))
+        monkeypatch.setattr(app_config, "SLEEPER_LEAGUE_ID", "L")
+
+        first = client.post("/api/admin/keepers/sync", headers=ADMIN).json()
+        again = client.post("/api/admin/keepers/sync", headers=ADMIN).json()
+
+        assert first["added"] == 1
+        assert again["added"] == 0, "re-syncing must not re-mint anyone's code"
 
     def test_the_admin_gate_does_not_leak_into_the_session_routes(self, shared_app):
         """Being the owner must not grant a browser someone else's sessions."""
