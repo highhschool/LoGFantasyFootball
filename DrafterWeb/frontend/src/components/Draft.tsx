@@ -28,7 +28,9 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState("");
-  const [showBoard, setShowBoard] = useState(false);
+  // Shown by default: the board is the thing you glance at between picks,
+  // and it starts small enough not to crowd the list.
+  const [showBoard, setShowBoard] = useState(true);
 
   // Re-fetch whenever the board moves or the filters change. Debounced so
   // typing a name does not fire a request per keystroke.
@@ -106,6 +108,13 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
+              onClick={() => setShowBoard((v) => !v)}
+              className="rounded-md bg-raised px-3 py-1.5 text-sm font-medium"
+            >
+              {showBoard ? "Hide board" : "Show board"}
+            </button>
+            <button
+              type="button"
               disabled={locked}
               onClick={() => act(() => api.autopick(session.id))}
               className="rounded-md bg-raised px-3 py-1.5 text-sm font-medium disabled:opacity-40"
@@ -127,13 +136,6 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
               className="rounded-md bg-raised px-3 py-1.5 text-sm font-medium disabled:opacity-40"
             >
               Simulate to end
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowBoard((v) => !v)}
-              className="ml-auto rounded-md bg-raised px-3 py-1.5 text-sm font-medium"
-            >
-              {showBoard ? "Hide board" : "Show board"}
             </button>
           </div>
 
