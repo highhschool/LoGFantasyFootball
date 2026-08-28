@@ -164,9 +164,9 @@ export function LiveDraftView({ draft, onDraft, onRename, onExit }: Props) {
         </p>
       )}
 
-      <div className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-        <BoardGrid session={draft} className="min-h-0 flex-1" />
-        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+      <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:overflow-hidden lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+        <BoardGrid session={draft} className="h-[50dvh] shrink-0 lg:h-auto lg:min-h-0 lg:shrink lg:flex-1" />
+        <div className="flex flex-col gap-3 lg:min-h-0 lg:overflow-y-auto">
           {/* No draft button: the pick is made on Sleeper, not here. */}
           <AdvicePanel advice={advice} loading={advising} yourTurn={draft.your_turn} />
           <RosterPanel session={draft} />

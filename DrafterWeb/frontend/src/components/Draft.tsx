@@ -175,7 +175,7 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
       {/* The toolbar spans the view; only the board moves between layouts.
           Widened it sits full width above both columns, so the player list and
           roster stay side by side underneath rather than stacking. */}
-      <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 lg:overflow-hidden">
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -224,7 +224,7 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
                   : "Widen the board across the full width"
               }
               aria-label={wideBoard ? "Narrow the board" : "Widen the board"}
-              className="rounded-md bg-raised px-3 py-1.5 text-sm font-medium"
+              className="hidden rounded-md bg-raised px-3 py-1.5 text-sm font-medium lg:inline-flex"
             >
               {wideBoard ? "«" : "»"}
             </button>
@@ -248,15 +248,15 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
           </>
         )}
 
-        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-          <div className="flex min-h-0 flex-col gap-3">
+        <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+          <div className="flex flex-col gap-3 lg:min-h-0">
             {/* Narrow, the board earns its height as it fills: empty it is
                 mostly blank rows, so the list keeps the room early on. */}
             {showBoard && !wideBoard && (
               <BoardGrid
                 session={session}
                 style={{ flexGrow: boardGrow }}
-                className="min-h-24 basis-0 motion-safe:transition-[flex-grow] motion-safe:duration-500"
+                className="h-[48dvh] shrink-0 lg:h-auto lg:min-h-24 lg:shrink lg:basis-0 lg:motion-safe:transition-[flex-grow] lg:motion-safe:duration-500"
               />
             )}
 
@@ -272,13 +272,13 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
               style={showBoard && !wideBoard ? { flexGrow: listGrow } : undefined}
               className={
                 showBoard && !wideBoard
-                  ? "min-h-40 basis-0 motion-safe:transition-[flex-grow] motion-safe:duration-500"
-                  : "flex-1"
+                  ? "h-[60dvh] shrink-0 lg:h-auto lg:min-h-40 lg:shrink lg:basis-0 lg:motion-safe:transition-[flex-grow] lg:motion-safe:duration-500"
+                  : "h-[70dvh] shrink-0 lg:h-auto lg:shrink lg:flex-1"
               }
             />
           </div>
 
-          <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+          <div className="flex flex-col gap-3 lg:min-h-0 lg:overflow-y-auto">
             <AdvicePanel
               advice={advice}
               loading={advising}
