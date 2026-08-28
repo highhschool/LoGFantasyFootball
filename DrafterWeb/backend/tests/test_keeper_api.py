@@ -654,3 +654,61 @@ class TestImportingIntoAMockDraft:
 
         assert data["keepers"] == []
         assert data["unordered"] == ["brayden"]
+
+
+class TestSwitchingManagers:
+    """A browser holds exactly one manager.
+
+    Setting a new claim without releasing the old one left both rows pointing
+    at the same browser, and the lookup returned whichever SQLite reached
+    first -- the older row. Signing in as somebody else appeared to do nothing
+    at all, which is how it was found.
+    """
+
+    def test_signing_in_as_somebody_else_actually_moves_you(self, app, synced):
+        with TestClient(app) as c:
+            claim(c, synced["u1"])
+            claim(c, synced["u2"])
+            assert c.get("/api/me").json()["you"]["display_name"] == "jed"
+
+    def test_the_manager_you_left_is_free_again(self, app, synced):
+        with TestClient(app) as c:
+            claim(c, synced["u1"])
+            claim(c, synced["u2"])
+
+        with TestClient(app) as owner:
+            listed = owner.get("/api/admin/keepers/codes", headers=ADMIN).json()["managers"]
+        held = {m["user_id"]: m["claimed"] for m in listed}
+        assert held == {"u1": False, "u2": True}
+
+    def test_you_take_their_roster_with_you(self, app, synced):
+        """Not just the name: the tools have to follow."""
+        with TestClient(app) as c:
+            claim(c, synced["u1"])
+            mine = {o["name"] for o in c.get("/api/keeper/roster").json()["options"]}
+            claim(c, synced["u2"])
+            theirs = {o["name"] for o in c.get("/api/keeper/roster").json()["options"]}
+        assert mine and theirs and not (mine & theirs)
+
+    def test_claiming_the_same_manager_twice_is_harmless(self, app, synced):
+        with TestClient(app) as c:
+            claim(c, synced["u1"])
+            claim(c, synced["u1"])
+            assert c.get("/api/me").json()["you"]["display_name"] == "brayden"
+
+    def test_a_second_browser_takes_the_claim_over(self, app, synced):
+        """People switch phones, and there is nobody here to appeal to."""
+        with TestClient(app) as phone, TestClient(app) as laptop:
+            claim(phone, synced["u1"])
+            claim(laptop, synced["u1"])
+            assert laptop.get("/api/me").json()["you"]["display_name"] == "brayden"
+            assert phone.get("/api/me").json()["you"] is None
+
+    def test_a_wrong_code_leaves_you_where_you_were(self, app, synced):
+        """A failed attempt must not sign you out of the account you have."""
+        with TestClient(app) as c:
+            claim(c, synced["u1"])
+            r = c.post("/api/keeper/claim",
+                       json={"user_id": "u2", "code": "WRONG9"})
+            assert r.status_code == 403
+            assert c.get("/api/me").json()["you"]["display_name"] == "brayden"

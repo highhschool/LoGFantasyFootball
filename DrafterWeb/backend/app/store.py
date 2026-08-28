@@ -424,8 +424,14 @@ class SessionStore:
     def claim_manager(self, user_id: str, code: str, owner_id: str) -> bool:
         """Tie a browser to a manager, if the code matches.
 
-        A different browser may take a claim over, because people switch
-        phones and there is nobody here to appeal to.
+        A different browser may take a claim over, because people switch phones
+        and there is nobody here to appeal to.
+
+        And a browser holds exactly one manager. Setting the new claim without
+        releasing the old one left both rows pointing at the same browser, and
+        `claimed_manager` then returned whichever SQLite reached first -- which
+        is the older row, so signing in as somebody else appeared to do
+        nothing at all.
         """
         with self._connect() as conn:
             row = conn.execute(
@@ -436,6 +442,11 @@ class SessionStore:
             ):
                 return False
 
+            conn.execute(
+                "UPDATE keeper_managers SET claimed_by = '', claimed_at = NULL"
+                " WHERE claimed_by = ?",
+                (owner_id,),
+            )
             conn.execute(
                 "UPDATE keeper_managers SET claimed_by = ?, claimed_at = ?"
                 " WHERE user_id = ?",

@@ -3,6 +3,7 @@ import { ApiError, me } from "../api";
 import type { Profile } from "../types";
 import { Avatar } from "./Avatar";
 import { SignIn } from "./SignIn";
+import { SignInDialog } from "./SignInDialog";
 
 /** How large an uploaded picture is redrawn before it is sent. */
 const EDGE = 256;
@@ -112,19 +113,11 @@ export function ProfilePage({
         <h1 className="text-3xl font-semibold tracking-tight">Profile</h1>
       </header>
 
-      {!profile || switching ? (
+      {!profile ? (
         <section className="rounded-lg border border-rule bg-surface p-5">
           <SignIn
-            heading={profile ? "Sign in as somebody else" : "Who are you?"}
-            blurb={
-              profile
-                ? "Entering another manager's code moves this browser to them."
-                : "Find your name and enter the code you were sent."
-            }
-            onSignedIn={() => {
-              setSwitching(false);
-              me.get().then((r) => onChanged(r.you));
-            }}
+            heading="Who are you?"
+            onSignedIn={() => me.get().then((r) => onChanged(r.you))}
           />
         </section>
       ) : (
@@ -206,6 +199,18 @@ export function ProfilePage({
             </button>
           </section>
         </>
+      )}
+
+      {switching && (
+        <SignInDialog
+          title="Sign in as somebody else"
+          blurb="Entering another manager's code moves this browser to them."
+          onSignedIn={() => {
+            setSwitching(false);
+            me.get().then((r) => onChanged(r.you));
+          }}
+          onClose={() => setSwitching(false)}
+        />
       )}
 
       {error && <p className="text-sm text-danger">{error}</p>}
