@@ -91,11 +91,22 @@ def _serialize(session: dict, state: DraftState, pool: PlayerPool) -> dict:
         "mode": session["mode"],
         "seed": session["seed"],
         "pick_seconds": session.get("pick_seconds", 0),
+        "randomness": session.get("randomness", 1.0),
         "config": {
             "teams": state.config.teams,
             "rounds": state.config.rounds,
             "your_slot": your_slot,
             "position_limits": state.config.position_limits,
+            # The configured keepers, not the placed ones: a keeper in a later
+            # round has no pick yet, and copying settings needs all of them.
+            "keepers": [
+                {
+                    "team_slot": k.team_slot,
+                    "round": k.round,
+                    "player_name": k.player_name,
+                }
+                for k in state.config.keepers
+            ],
         },
         "complete": state.complete,
         "your_turn": state.your_turn,

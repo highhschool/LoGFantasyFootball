@@ -387,3 +387,64 @@ class TestKeeperOnYourOwnSlot:
         ])
         # The UI blocks this, but if one arrives it must be visible, not silent.
         assert state["unresolved_keepers"] == ["   "]
+
+
+class TestSettingsAreCopyable:
+    """A session must return everything needed to seed a new one."""
+
+    def test_keepers_come_back_in_full(self, client):
+        keepers = [
+            {"team_slot": 4, "round": 1, "player_name": "Ja'Marr Chase"},
+            {"team_slot": 9, "round": 8, "player_name": "Bijan Robinson"},
+        ]
+        state = new_session(client, your_slot=4, keepers=keepers)
+        assert state["config"]["keepers"] == keepers
+
+    def test_a_late_round_keeper_is_included_before_it_is_picked(self, client):
+        """Reading keepers off placed picks would miss this one entirely."""
+        state = new_session(client, your_slot=1, keepers=[
+            {"team_slot": 5, "round": 12, "player_name": "Bijan Robinson"},
+        ])
+        assert not any(p["source"] == "keeper" for p in state["picks"])
+        assert state["config"]["keepers"][0]["round"] == 12
+
+    def test_every_setting_survives_a_round_trip(self, client):
+        original = new_session(
+            client, teams=12, rounds=15, your_slot=9,
+            randomness=1.5, pick_seconds=90,
+            keepers=[{"team_slot": 9, "round": 2, "player_name": "Puka Nacua"}],
+        )
+        fetched = client.get(f"/api/sessions/{original['id']}").json()
+
+        assert fetched["randomness"] == 1.5
+        assert fetched["pick_seconds"] == 90
+        assert fetched["config"]["teams"] == 12
+        assert fetched["config"]["rounds"] == 15
+        assert fetched["config"]["your_slot"] == 9
+        assert fetched["config"]["keepers"] == [
+            {"team_slot": 9, "round": 2, "player_name": "Puka Nacua"}
+        ]
+
+    def test_copied_settings_recreate_an_equivalent_draft(self, client):
+        first = new_session(
+            client, teams=12, your_slot=7, randomness=0.5, pick_seconds=60,
+            keepers=[{"team_slot": 7, "round": 1, "player_name": "Ja'Marr Chase"}],
+        )
+        c = first["config"]
+
+        second = new_session(
+            client, name="copy", teams=c["teams"], rounds=c["rounds"],
+            your_slot=c["your_slot"], randomness=first["randomness"],
+            pick_seconds=first["pick_seconds"], keepers=c["keepers"],
+        )
+
+        assert second["config"]["your_slot"] == first["config"]["your_slot"]
+        assert second["config"]["keepers"] == first["config"]["keepers"]
+        assert second["pick_seconds"] == first["pick_seconds"]
+        assert second["randomness"] == first["randomness"]
+        assert [r["player_name"] for r in second["your_roster"]] == [
+            r["player_name"] for r in first["your_roster"]
+        ]
+
+    def test_no_keepers_copies_as_an_empty_list(self, client):
+        assert new_session(client)["config"]["keepers"] == []

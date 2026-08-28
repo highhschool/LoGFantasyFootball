@@ -39,17 +39,25 @@ export interface OnTheClock {
   team_slot: number;
 }
 
+export interface KeeperDraft {
+  team_slot: number;
+  round: number;
+  player_name: string;
+}
+
 export interface DraftSession {
   id: string;
   name: string;
   mode: string;
   seed: number;
   pick_seconds: number;
+  randomness: number;
   config: {
     teams: number;
     rounds: number;
     your_slot: number;
     position_limits: Record<string, number>;
+    keepers: KeeperDraft[];
   };
   complete: boolean;
   your_turn: boolean;
@@ -69,12 +77,6 @@ export interface SessionSummary {
   created_at: string;
   updated_at: string;
   picks_made: number;
-}
-
-export interface KeeperDraft {
-  team_slot: number;
-  round: number;
-  player_name: string;
 }
 
 export interface NewSession {

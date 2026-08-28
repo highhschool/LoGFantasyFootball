@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { api } from "../api";
 import type { AdpProvenance } from "../api";
 import type { KeeperDraft, NewSession, SessionSummary } from "../types";
 import { AdpBadge } from "./AdpBadge";
@@ -9,6 +10,7 @@ import { SlotPicker } from "./SlotPicker";
 // exactly 15 players, so this is a roster constraint rather than a
 // preference. The API rejects anything above it.
 const MAX_ROUNDS = 15;
+const TEAM_OPTIONS = [8, 10, 12];
 
 interface Props {
   sessions: SessionSummary[];
@@ -40,6 +42,25 @@ export function Setup({
   // A keeper row with no player used to be filtered out at submit, so the
   // draft ran without it and nothing said why. Block instead.
   const blankKeepers = keepers.filter((k) => k.player_name.trim() === "").length;
+  const [copied, setCopied] = useState<string | null>(null);
+
+  /** Reuse a previous draft's setup: league shape, clock, variance, keepers. */
+  async function copySettings(id: string, label: string) {
+    try {
+      const previous = await api.getSession(id);
+      const c = previous.config;
+
+      setTeams(TEAM_OPTIONS.includes(c.teams) ? c.teams : 12);
+      setRounds(Math.min(c.rounds, MAX_ROUNDS));
+      setSlot(Math.min(c.your_slot, c.teams));
+      setRandomness(previous.randomness);
+      setPickSeconds(previous.pick_seconds);
+      setKeepers(c.keepers.map((k) => ({ ...k })));
+      setCopied(label);
+    } catch {
+      setCopied(null);
+    }
+  }
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
       <header>
@@ -63,7 +84,7 @@ export function Setup({
               }}
               className="select-field w-full rounded-md border border-rule bg-ground px-3 py-2"
             >
-              {[8, 10, 12].map((n) => (
+              {TEAM_OPTIONS.map((n) => (
                 <option key={n} value={n}>
                   {n}
                 </option>
@@ -140,6 +161,12 @@ export function Setup({
           chalk board.
         </p>
 
+        {copied && (
+          <p className="mt-3 text-sm text-accent">
+            Settings copied from “{copied}”. Adjust anything below, then start.
+          </p>
+        )}
+
         {blankKeepers > 0 && (
           <p className="mt-3 text-sm text-warn">
             {blankKeepers === 1
@@ -192,6 +219,14 @@ export function Setup({
                     {s.picks_made} picks · {new Date(s.updated_at).toLocaleString()}
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => copySettings(s.id, s.name || s.id)}
+                  title="Load this draft's settings into the form above"
+                  className="rounded-md bg-raised px-3 py-1.5 text-xs font-semibold"
+                >
+                  Copy settings
+                </button>
                 <button
                   type="button"
                   onClick={() => onResume(s.id)}
