@@ -9,7 +9,16 @@ from app import config, main
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, rankings_dir_2025):
+    """Built against the 2025 fixture rather than the live ADP feed.
+
+    Starting the app loads rankings, so without the override these tests
+    fetched from Fantasy Football Calculator -- and passed or failed on
+    whether the one-hour disk cache happened to be warm.
+    """
+    monkeypatch.setattr(config, "RANKINGS_DIR", rankings_dir_2025)
+    monkeypatch.setattr(config, "SEASON", 2025)
+
     def _make(token: str):
         monkeypatch.setattr(config, "ADMIN_TOKEN", token)
         return TestClient(main.app)
