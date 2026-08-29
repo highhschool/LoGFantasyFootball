@@ -417,7 +417,13 @@ function Header({
   const clock = session.on_the_clock;
 
   return (
-    <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-rule bg-surface px-4 py-3">
+    // Held at the height of its tallest state rather than fitting whatever is
+    // in it. Most of the row is a line of text; the pills -- "You're on the
+    // clock", the pick clock, "Draft complete" -- are padded and so are taller,
+    // and the header grew by those few pixels every time your turn came round,
+    // nudging the whole board down at the moment you were reading it. The
+    // minimum only sets the floor, so a row that wraps on a phone still grows.
+    <header className="flex min-h-[3.25rem] flex-wrap items-center gap-x-4 gap-y-2 border-b border-rule bg-surface px-4 py-3">
       <button
         type="button"
         onClick={onExit}
