@@ -567,6 +567,7 @@ class SessionStore:
         out = []
         for r in rows:
             config = config_from_json(r["config_json"])
+            picks = len(json.loads(r["log_json"]))
             out.append({
                 "id": r["id"],
                 "name": r["name"],
@@ -576,7 +577,13 @@ class SessionStore:
                 "rounds": config.rounds,
                 "your_slot": config.your_slot,
                 "keepers": len(config.keepers),
-                "picks_made": len(json.loads(r["log_json"])),
+                "picks_made": picks,
+                # Whether the board is full, worked out here rather than left
+                # for a page to infer. Keepers occupy a cell without being a
+                # logged pick, so counting the log against teams x rounds
+                # leaves a keeper draft permanently one short of finished --
+                # and it would be the drafts that matter most getting it wrong.
+                "complete": picks + len(config.keepers) >= config.teams * config.rounds,
                 "created_at": r["created_at"],
                 "updated_at": r["updated_at"],
             })

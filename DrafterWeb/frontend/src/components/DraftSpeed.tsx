@@ -6,11 +6,13 @@
  * why anybody runs one. Pacing is purely presentational: every speed produces
  * the same board, because each step is a real pick in the log either way.
  */
+// Declaration order is the order they are drawn, running from no wait to the
+// longest one rather than jumping about.
 export const SPEEDS = {
   instant: { label: "Instant", pause: 0 },
-  fast: { label: "Fast", pause: 350 },
-  normal: { label: "Normal", pause: 900 },
   slow: { label: "Slow", pause: 1800 },
+  normal: { label: "Normal", pause: 900 },
+  fast: { label: "Fast", pause: 350 },
 } as const;
 
 export type Speed = keyof typeof SPEEDS;
@@ -47,15 +49,17 @@ export function SpeedPicker({
   onChange,
   running,
   onSkip,
+  className = "",
 }: {
   speed: Speed;
   onChange: (speed: Speed) => void;
   /** True while bots are picking, so the skip is only offered when it does something. */
   running: boolean;
   onSkip: () => void;
+  className?: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
       <span className="text-xs text-ink-3">Bots</span>
       {(Object.keys(SPEEDS) as Speed[]).map((key) => (
         <button

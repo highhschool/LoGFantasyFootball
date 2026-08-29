@@ -288,10 +288,12 @@
     try { return new Date(iso).toLocaleString(); } catch { return iso; }
   };
 
+  // The server decides. It had been worked out here from the pick count
+  // against teams x rounds, which is wrong the moment a draft has keepers --
+  // they fill a cell without being a logged pick, so a keeper draft could
+  // never reach the total and never showed as finished.
   const progress = (s) =>
-    s.picks_made === 0 ? "empty"
-      : s.picks_made >= s.teams * s.rounds ? "complete"
-        : "partial";
+    s.complete ? "complete" : s.picks_made === 0 ? "empty" : "partial";
 
   function filtered() {
     const q = document.getElementById("q").value.trim().toLowerCase();

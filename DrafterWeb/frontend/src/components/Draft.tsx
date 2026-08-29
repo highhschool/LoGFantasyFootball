@@ -262,6 +262,21 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
           >
             Simulate to end
           </button>
+          {/* With the other controls rather than above the right-hand column:
+              on a phone that column is far down the page and the setting was
+              a scroll away from the draft it governs. */}
+          <SpeedPicker
+            className="ml-auto"
+            speed={speed}
+            onChange={(next) => {
+              setSpeed(next);
+              rememberSpeed(next);
+              // Choosing instant mid-run means finish now, not finish slowly.
+              if (next === "instant") skipAhead();
+            }}
+            running={pacing}
+            onSkip={skipAhead}
+          />
           <button
             type="button"
             onClick={() => {
@@ -270,7 +285,7 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
               if (showBoard) setWideBoard(false);
               setShowBoard((v) => !v);
             }}
-            className="ml-auto rounded-md bg-raised px-3 py-1.5 text-sm font-medium"
+            className="rounded-md bg-raised px-3 py-1.5 text-sm font-medium"
           >
             {showBoard ? "Hide board" : "Show board"}
           </button>
@@ -350,18 +365,6 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
           </div>
 
           <div className="flex min-w-0 flex-col gap-3 lg:min-h-0 lg:overflow-y-auto">
-            <SpeedPicker
-              speed={speed}
-              onChange={(next) => {
-                setSpeed(next);
-                rememberSpeed(next);
-                // Switching to instant mid-run means finish it now.
-                if (next === "instant") skipAhead();
-              }}
-              running={pacing}
-              onSkip={skipAhead}
-            />
-
             <AdvicePanel
               atPick={
                 session.on_the_clock && session.picks_until_your_next !== null
@@ -372,7 +375,10 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
               loading={advising}
               yourTurn={session.your_turn}
               canDraft={!locked}
-              onDraft={(a) => act(() => api.pick(session.id, a.key))}
+              onDraft={(a) => {
+                setPacing(speed !== "instant");
+                pickAndPace(a.key);
+              }}
             />
             <RosterPanel session={session} />
           </div>

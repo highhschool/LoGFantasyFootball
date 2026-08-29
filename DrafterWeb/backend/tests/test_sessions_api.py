@@ -550,3 +550,61 @@ class TestPacingTheBots:
         r = client.post(f"/api/sessions/{session['id']}/advance")
         assert r.status_code == 409
         assert "complete" in r.json()["detail"]
+
+
+class TestKnowingWhenADraftIsFinished:
+    """The admin listing decides, rather than a page inferring it.
+
+    Keepers fill a cell without ever being a logged pick, so counting the log
+    against teams x rounds leaves a keeper draft one short forever -- and it
+    would be the drafts that matter most getting it wrong.
+    """
+
+    def test_a_fresh_draft_is_not_complete(self, client):
+        new_session(client, your_slot=6)
+        from app import main
+
+        assert main._store.list_all()[0]["complete"] is False
+
+    def test_a_finished_draft_is(self, client):
+        session = new_session(client, your_slot=6)
+        client.post(f"/api/sessions/{session['id']}/simulate")
+        from app import main
+
+        row = next(r for r in main._store.list_all() if r["id"] == session["id"])
+        assert row["complete"] is True
+        assert row["picks_made"] == row["teams"] * row["rounds"]
+
+    def test_one_pick_short_is_not(self, client):
+        session = new_session(client, your_slot=6)
+        client.post(f"/api/sessions/{session['id']}/simulate")
+        from app import main
+        from app.core.engine import undo
+
+        # load_any, since the session belongs to the client's own cookie.
+        held = main._store.load_any(session["id"])
+        main._store.save_log(session["id"], undo(held["log"]), held["owner_id"])
+
+        row = next(r for r in main._store.list_all() if r["id"] == session["id"])
+        assert row["complete"] is False
+
+    def test_keepers_count_towards_the_board(self, client):
+        """The case the old rule got wrong."""
+        from app import main
+        from app.core.engine import LoggedPick
+        from app.core.models import DraftConfig, Keeper
+
+        config = DraftConfig(
+            year=2025, teams=3, rounds=2, your_slot=1,
+            keepers=(Keeper(1, 1, "A"), Keeper(2, 1, "B")),
+        )
+        sid = main._store.create(config, seed=1, name="kept")
+        cells = config.teams * config.rounds
+        main._store.save_log(
+            sid, [LoggedPick(player_key=f"p{i}") for i in range(cells - 2)], ""
+        )
+
+        row = next(r for r in main._store.list_all() if r["id"] == sid)
+        assert row["picks_made"] == 4
+        assert row["keepers"] == 2
+        assert row["complete"] is True, "four picked plus two kept fills six cells"
