@@ -66,6 +66,27 @@ export function SpeedPicker({
   return (
     <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
       <span className="text-xs text-ink-3">Bots</span>
+
+      {/* Always laid out, only sometimes visible. It used to be appended when
+          the bots started picking, which shoved the speeds along and re-wrapped
+          the bar underneath -- the controls moved at exactly the moment you
+          were reaching for them. Hidden rather than unmounted, so the row is
+          the same width whether it is running or not. `invisible` also takes
+          it out of the tab order, which `opacity-0` would not. */}
+      <button
+        type="button"
+        onClick={onSkip}
+        disabled={!running}
+        aria-hidden={!running}
+        title="Skip to my pick"
+        aria-label="Skip to my pick"
+        className={`rounded-md bg-raised px-2 py-1 text-xs font-semibold text-ink-2 hover:text-ink ${
+          running ? "" : "invisible"
+        }`}
+      >
+        Skip
+      </button>
+
       {(Object.keys(SPEEDS) as Speed[]).map((key) => {
         const { label, name } = SPEEDS[key];
         const glyph = label !== name;
@@ -89,16 +110,6 @@ export function SpeedPicker({
           </button>
         );
       })}
-
-      {running && (
-        <button
-          type="button"
-          onClick={onSkip}
-          className="ml-1 rounded-md bg-raised px-2 py-1 text-xs font-semibold text-ink-2"
-        >
-          Skip to my pick
-        </button>
-      )}
     </div>
   );
 }
