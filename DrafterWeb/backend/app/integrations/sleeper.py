@@ -274,6 +274,21 @@ class SleeperClient:
             raise SleeperError("could not read the player directory")
         return payload
 
+    def season_stats(self, season: int) -> dict:
+        """Every player's totals for one season, keyed by Sleeper id.
+
+        Not among the documented endpoints, though it sits on the `/v1` path.
+        Treated as best-effort accordingly: it feeds a player profile, never a
+        settlement, so losing it costs a panel rather than a payout.
+
+        Two megabytes a season, which is why this is cached into its own
+        database rather than held in memory or re-read per request.
+        """
+        payload = self._fetch(f"/stats/nfl/regular/{season}", f"stats-{season}")
+        if not isinstance(payload, dict):
+            raise SleeperError(f"could not read {season} stats")
+        return payload
+
     def picks(self, draft_id: str) -> list[SleeperPick]:
         payload = self._fetch(f"/draft/{draft_id}/picks", f"draft-{draft_id}-picks")
         if not isinstance(payload, list):
