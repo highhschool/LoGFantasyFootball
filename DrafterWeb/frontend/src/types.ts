@@ -15,6 +15,8 @@ export interface Player {
 
 export interface Pick {
   overall: number;
+  /** Zero for a player this year's rankings do not carry. */
+  ffc_id: number;
   round: number;
   team_slot: number;
   player_name: string;

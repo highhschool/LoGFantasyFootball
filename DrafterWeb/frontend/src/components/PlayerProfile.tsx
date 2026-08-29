@@ -186,19 +186,60 @@ function Career({ data }: { data: Profile }) {
   );
 }
 
+/** How much of an analysis piece shows before it needs asking for. */
+const PREVIEW = 320;
+
 function Notes({ data }: { data: Profile }) {
-  const note = data.notes[0];
+  const [open, setOpen] = useState(false);
+  const [which, setWhich] = useState(0);
+
+  const note = data.notes[which];
+  const long = note.body.length > PREVIEW;
+  const body = open || !long ? note.body : `${note.body.slice(0, PREVIEW).trimEnd()}…`;
+
   return (
     <section className="flex flex-col gap-1">
-      <h3 className="text-xs font-semibold tracking-wider text-ink-3 uppercase">
+      <h3 className="flex items-baseline gap-2 text-xs font-semibold tracking-wider text-ink-3 uppercase">
         Latest
+        {/* Older pieces are worth reaching, but one at a time -- three
+            paragraphs stacked is a wall rather than a profile. */}
+        {data.notes.length > 1 && (
+          <span className="flex gap-1 normal-case">
+            {data.notes.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => {
+                  setWhich(i);
+                  setOpen(false);
+                }}
+                className={`tnum rounded px-1.5 text-[11px] font-semibold ${
+                  i === which ? "bg-accent text-ground" : "bg-raised text-ink-3"
+                }`}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </span>
+        )}
       </h3>
+
       <p className="text-sm font-medium">{note.title}</p>
+
       {note.body && (
-        <p className="text-sm text-ink-3">
-          {note.body.length > 320 ? `${note.body.slice(0, 320)}…` : note.body}
-        </p>
+        <p className="text-sm whitespace-pre-line text-ink-3">{body}</p>
       )}
+
+      {long && (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="self-start text-xs font-semibold text-accent hover:underline"
+        >
+          {open ? "Show less" : "Read the rest"}
+        </button>
+      )}
+
       {note.updated && <p className="text-xs text-ink-3">{note.updated}</p>}
     </section>
   );

@@ -123,6 +123,7 @@ def _serialize(session: dict, state: DraftState, pool: PlayerPool) -> dict:
                 "overall": p.overall, "round": p.round, "team_slot": p.team_slot,
                 "player_name": p.player_name, "position": p.position, "team": p.team,
                 "bye_week": p.bye_week, "adp": p.adp, "source": p.source,
+                "ffc_id": p.ffc_id,
             }
             for p in state.picks
         ],

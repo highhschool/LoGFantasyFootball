@@ -1,4 +1,6 @@
+import { useState } from "react";
 import type { BoardView, Position } from "../types";
+import { PlayerProfile } from "./PlayerProfile";
 
 const TONE: Record<string, string> = {
   QB: "text-qb",
@@ -25,6 +27,8 @@ export function BoardGrid({
   className?: string;
   style?: React.CSSProperties;
 }) {
+  const [profile, setProfile] = useState<number | null>(null);
+
   const { teams, rounds, your_slot } = session.config;
   const byOverall = new Map(session.picks.map((p) => [p.overall, p]));
   const onClock = session.on_the_clock?.overall ?? -1;
@@ -95,8 +99,22 @@ export function BoardGrid({
                         } ${isClock ? "ring-2 ring-accent ring-inset" : ""}`}
                       >
                         {pick ? (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="truncate font-medium text-ink" title={pick.player_name}>
+                          <div
+                            role={pick.ffc_id ? "button" : undefined}
+                            tabIndex={pick.ffc_id ? 0 : undefined}
+                            onClick={pick.ffc_id ? () => setProfile(pick.ffc_id) : undefined}
+                            onKeyDown={(e) => {
+                              if (pick.ffc_id && (e.key === "Enter" || e.key === " ")) {
+                                e.preventDefault();
+                                setProfile(pick.ffc_id);
+                              }
+                            }}
+                            title={pick.ffc_id ? `${pick.player_name} — career, ADP and the latest` : pick.player_name}
+                            className={`flex flex-col gap-0.5 ${
+                              pick.ffc_id ? "cursor-pointer hover:underline" : ""
+                            }`}
+                          >
+                            <span className="truncate font-medium text-ink">
                               {pick.player_name}
                             </span>
                             <span className="flex items-center gap-1.5">
@@ -127,6 +145,10 @@ export function BoardGrid({
           </tbody>
         </table>
       </div>
+
+      {profile !== null && (
+        <PlayerProfile ffcId={profile} onClose={() => setProfile(null)} />
+      )}
     </section>
   );
 }

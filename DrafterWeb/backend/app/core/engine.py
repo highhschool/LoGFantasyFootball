@@ -67,6 +67,9 @@ class Pick:
     bye_week: int | None
     adp: float
     source: str
+    # Fantasy Football Calculator's id, so a pick on the board can be opened.
+    # Zero for a player this year's rankings do not carry, who has no profile.
+    ffc_id: int = 0
 
 
 @dataclass
@@ -175,7 +178,7 @@ def _place(
         state, cell,
         key=player.key, name=player.name, position=player.position,
         team=player.team, bye_week=player.bye_week, adp=player.adp,
-        source=source, count_position=count_position,
+        source=source, count_position=count_position, ffc_id=player.ffc_id,
     )
 
 
@@ -201,6 +204,7 @@ def _record(
     adp: float,
     source: str,
     count_position: bool,
+    ffc_id: int = 0,
 ) -> None:
     pick = Pick(
         overall=cell.overall,
@@ -214,6 +218,7 @@ def _record(
         bye_week=bye_week,
         adp=adp,
         source=source,
+        ffc_id=ffc_id,
     )
     state.picks.append(pick)
     state.drafted.add(key)
