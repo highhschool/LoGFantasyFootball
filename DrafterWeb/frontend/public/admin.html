@@ -204,6 +204,18 @@
       </div>
 
       <div id="ledger"></div>
+
+      <h3 style="margin:1.2rem 0 0;font-size:0.95rem">Season pot</h3>
+      <p class="sub" id="pot-summary" style="margin:0.2rem 0 0.6rem">Loading…</p>
+      <div class="wrap">
+        <table>
+          <thead><tr>
+            <th>Manager</th><th class="num">Ante</th><th>Paid</th>
+            <th class="num">Would win</th><th></th>
+          </tr></thead>
+          <tbody id="pot-rows"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </details>
 
@@ -689,8 +701,73 @@
     drop.textContent = `Failed: ${(await r.json()).detail || r.status}`;
   });
 
-  document.getElementById("refresh-contracts").addEventListener("click", loadContracts);
+  // The only real money in the tool. The pot is exactly what people put in,
+  // so it cannot pay out more than it holds and nobody is a counterparty.
+  async function loadPot() {
+    const rows = document.getElementById("pot-rows");
+    try {
+      const d = await fetch("/api/admin/contracts/pot").then((r) => r.json());
+      const owed = d.projected.reduce((a, p) => a + p.amount, 0);
+
+      document.getElementById("pot-summary").innerHTML =
+        `Pot <strong>${money(d.pot)}</strong> from ` +
+        `${d.paid.filter((p) => p.in).length} of ${d.paid.length} at ${money(d.ante)}` +
+        (d.owing.length
+          ? ` &middot; <span class="err">owing: ${escape(d.owing.join(", "))}</span>`
+          : " &middot; everyone is in") +
+        ` &middot; splits ${d.shares.join("/")}`;
+
+      const wins = {};
+      d.projected.forEach((p) => { wins[p.user_id] = p.amount; });
+
+      rows.innerHTML = d.paid.map((m) => `
+        <tr>
+          <td>${escape(m.manager || m.user_id)}</td>
+          <td class="num">${m.in ? money(m.amount) : "—"}</td>
+          <td>${m.in
+            ? `<span class="pill good">paid</span>`
+            : `<span class="pill warn">owing</span>`}</td>
+          <td class="num">${wins[m.user_id] ? money(wins[m.user_id]) : "—"}</td>
+          <td>${m.in
+            ? `<button data-unpaid="${m.user_id}">Undo</button>`
+            : `<button data-paid="${m.user_id}">Mark paid</button>`}</td>
+        </tr>`).join("");
+
+      if (owed !== d.pot && d.pot > 0) {
+        rows.innerHTML += `<tr><td colspan="5" class="err">` +
+          `Pot ${money(d.pot)} but ${money(owed)} projected out — this should not happen.` +
+          `</td></tr>`;
+      }
+    } catch (e) {
+      rows.innerHTML = `<tr><td colspan="5" class="err">Could not load: ${escape(String(e))}</td></tr>`;
+    }
+  }
+
+  document.addEventListener("click", async (e) => {
+    const paid = e.target.closest("[data-paid]");
+    const undo = e.target.closest("[data-unpaid]");
+    if (!paid && !undo) return;
+    e.target.disabled = true;
+
+    if (paid) {
+      await fetch("/api/admin/contracts/pot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: paid.dataset.paid }),
+      });
+    } else {
+      await fetch(`/api/admin/contracts/pot/${undo.dataset.unpaid}`,
+                  { method: "DELETE" });
+    }
+    await loadPot();
+  });
+
+  document.getElementById("refresh-contracts").addEventListener("click", () => {
+    loadContracts();
+    loadPot();
+  });
   loadContracts();
+  loadPot();
 
   // -------------------------------------------------- Sleeper cross-check
 

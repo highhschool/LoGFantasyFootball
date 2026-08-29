@@ -98,6 +98,14 @@ CREATE TABLE IF NOT EXISTS contract_trades (
 CREATE INDEX IF NOT EXISTS contract_trades_market
     ON contract_trades (market_id, trade_id);
 
+-- The season pot. One row per manager who has paid in; the pot is the sum of
+-- them, so it cannot pay out more than went in.
+CREATE TABLE IF NOT EXISTS contract_antes (
+    user_id  TEXT PRIMARY KEY,
+    amount   INTEGER NOT NULL,
+    paid_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS keeper_picks (
     user_id      TEXT PRIMARY KEY,
     player_key   TEXT NOT NULL,
@@ -813,6 +821,30 @@ class SessionStore:
                 own.close()
 
         return start - paid + won * 100
+
+    def antes(self) -> dict[str, dict]:
+        """Who has paid into the season pot, keyed by manager."""
+        with self._connect() as conn:
+            return {
+                r["user_id"]: dict(r)
+                for r in conn.execute("SELECT * FROM contract_antes")
+            }
+
+    def set_ante(self, user_id: str, amount: int) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO contract_antes (user_id, amount, paid_at)"
+                " VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET"
+                " amount = excluded.amount, paid_at = excluded.paid_at",
+                (user_id, amount, _now()),
+            )
+
+    def clear_ante(self, user_id: str) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM contract_antes WHERE user_id = ?", (user_id,)
+            )
+        return cur.rowcount > 0
 
     def resolve_market(self, market_id: str, yes_won: bool) -> bool:
         """Settle a market. Never re-settles one already called."""

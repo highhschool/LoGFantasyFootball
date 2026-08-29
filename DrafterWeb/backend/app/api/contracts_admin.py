@@ -22,6 +22,8 @@ from .. import config as app_config
 from ..admin import require_admin
 from ..core.contracts import MarketConfig, phase, replay, settle_all
 from ..core.draft_markets import Board, TemplateError, build, template
+from ..core.pot import payouts as split_pot
+from ..core.wallet import leaderboard as rank_managers
 from ..core.rankings import PlayerPool
 from ..core.slates import Slate, SlateError, draft_slate, next_open, weekly_slate
 from ..integrations.sleeper import SleeperClient, SleeperError
@@ -39,6 +41,11 @@ class SlateIn(BaseModel):
     stakes: str = Field(default="play", pattern="^(play|real)$")
     draft_start: str | None = None      # required for a draft slate
     opens_at: str | None = None         # defaults to the next Tuesday
+
+
+class AnteIn(BaseModel):
+    user_id: str
+    amount: int | None = None      # defaults to the configured ante
 
 
 class MarketIn(BaseModel):
@@ -359,3 +366,98 @@ def ledger(
             reverse=True,
         ),
     }
+
+
+# -------------------------------------------------------------- the pot
+
+@router.get("/pot")
+def pot(
+    request: Request,
+    store: SessionStore = Depends(get_store),
+) -> dict:
+    """Who has paid in, what the pot holds, and where it would go today.
+
+    The projection is the table as it stands, not a promise. It exists so the
+    league can see what is being played for, which is the whole point of
+    having real money on a play-money game.
+    """
+    require_admin(request)
+
+    from .contracts import books
+
+    managers = store.managers()
+    names = {m["user_id"]: m["display_name"] or m["team_name"] for m in managers}
+    paid = store.antes()
+
+    total = sum(row["amount"] for row in paid.values())
+    table = rank_managers(
+        books(store, "play"),
+        everyone=[m["user_id"] for m in managers],
+        start=app_config.CONTRACTS_START,
+    )
+    # You have to be in it to win it. Ranked among the managers who actually
+    # paid, so somebody who never anted cannot take a share of other people's
+    # money by topping the table.
+    entered = [
+        {"user_id": s.user_id, "manager": names.get(s.user_id, s.user_id),
+         "equity": s.equity, "league_rank": i}
+        for i, s in enumerate(table, 1)
+        if s.user_id in paid
+    ]
+    standings = [{**row, "rank": i} for i, row in enumerate(entered, 1)]
+
+    return {
+        "ante": app_config.CONTRACTS_ANTE,
+        "shares": app_config.CONTRACTS_PAYOUT,
+        "pot": total,
+        "paid": [
+            {"user_id": m["user_id"], "manager": names.get(m["user_id"], ""),
+             "amount": paid.get(m["user_id"], {}).get("amount", 0),
+             "paid_at": paid.get(m["user_id"], {}).get("paid_at"),
+             "in": m["user_id"] in paid}
+            for m in managers
+        ],
+        "owing": [names.get(m["user_id"], "") for m in managers
+                  if m["user_id"] not in paid],
+        "entered": len(standings),
+        "projected": [
+            {**p.as_dict(), "league_rank": standings[i]["league_rank"]}
+            for i, p in enumerate(split_pot(
+                total, app_config.CONTRACTS_PAYOUT, standings
+            ))
+        ],
+    }
+
+
+@router.post("/pot")
+def record_ante(
+    body: AnteIn,
+    request: Request,
+    store: SessionStore = Depends(get_store),
+) -> dict:
+    """Mark a manager as having paid in."""
+    require_admin(request)
+
+    known = {m["user_id"] for m in store.managers()}
+    if body.user_id not in known:
+        raise HTTPException(status_code=404, detail="no such manager")
+
+    amount = app_config.CONTRACTS_ANTE if body.amount is None else body.amount
+    if amount <= 0:
+        raise HTTPException(status_code=422, detail="an ante has to be something")
+
+    store.set_ante(body.user_id, amount)
+    return pot(request, store)
+
+
+@router.delete("/pot/{user_id}")
+def unrecord_ante(
+    user_id: str,
+    request: Request,
+    store: SessionStore = Depends(get_store),
+) -> dict:
+    """Undo a payment marked in error."""
+    require_admin(request)
+    if not store.clear_ante(user_id):
+        raise HTTPException(status_code=404, detail="they were not marked as paid")
+    return pot(request, store)

@@ -102,6 +102,24 @@ CONTRACTS_B = float(os.getenv("CONTRACTS_B", "50"))
 
 # What every manager starts a season with on a play-money slate, in cents.
 CONTRACTS_START = int(os.getenv("CONTRACTS_START", "100000"))
+
+# The season pot. Play money decides the standings; this is the only real
+# money in the tool, it is fixed, and it is funded entirely by the antes -- so
+# nobody can be down more than they put in and the house is not exposed at all.
+CONTRACTS_ANTE = int(os.getenv("CONTRACTS_ANTE", "2000"))
+
+
+def _shares() -> list[int]:
+    """How the pot splits, as percentages, first place first."""
+    raw = os.getenv("CONTRACTS_PAYOUT", "50,33,17")
+    try:
+        out = [int(x) for x in raw.split(",") if x.strip()]
+    except ValueError:
+        out = [50, 33, 17]
+    return out if out and sum(out) == 100 else [50, 33, 17]
+
+
+CONTRACTS_PAYOUT = _shares()
 CONTRACTS_SPREAD = int(os.getenv("CONTRACTS_SPREAD", "1"))
 
 SLEEPER_API = os.getenv("SLEEPER_API", "https://api.sleeper.app/v1")
