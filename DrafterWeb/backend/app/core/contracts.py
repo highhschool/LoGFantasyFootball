@@ -348,7 +348,10 @@ def plan(
         qy, qn = apply(qy, qn, side, wants)
         total += leg.cash
 
-    if balance is not None and total > balance:
+    # Only a trade that costs money can be unaffordable. Selling returns it,
+    # and a balance already underwater would otherwise refuse the very trade
+    # that repairs it.
+    if balance is not None and total > 0 and total > balance:
         raise MarketError(
             f"that costs {_money(total)} and you have {_money(balance)}"
         )

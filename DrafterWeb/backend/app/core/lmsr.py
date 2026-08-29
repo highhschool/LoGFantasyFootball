@@ -120,9 +120,12 @@ def quote(qy: int, qn: int, b: float, side: str, shares: int, spread: int = 0) -
     if spread < 0:
         raise ValueError(f"spread cannot be negative, got {spread}")
 
+    # No bound on where the book lands. It is a coordinate on a curve, not a
+    # pile of shares: a market seeded to open at 10c starts well below zero,
+    # and refusing to move it further would make its own positions
+    # unsellable. What a trader may sell is bounded by what they hold, which
+    # is `contracts.plan`'s business and not the curve's.
     ay, an = (qy + shares, qn) if side == YES else (qy, qn + shares)
-    if ay < 0 or an < 0:
-        raise ValueError("cannot sell back more than the market holds")
 
     swing = (cost(ay, an, b) - cost(qy, qn, b)) * DOLLAR
     friction = spread * abs(shares)

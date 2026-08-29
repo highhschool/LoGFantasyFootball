@@ -32,6 +32,7 @@ from ..core.contracts import (
 )
 from ..core.lmsr import NO, YES
 from ..core.rankings import PlayerPool
+from ..core.wallet import leaderboard as rank_managers
 from ..owner import resolve as resolve_owner
 from ..store import SessionStore
 
@@ -99,9 +100,38 @@ def logged(rows: list[dict]) -> list[Trade]:
 
 
 def with_slate(store: SessionStore, row: dict) -> dict:
-    """Markets carry their own close; the open comes from their slate."""
+    """Markets carry their own close; the open and the stakes come from the slate."""
     slate = store.slate(row["slate_id"]) or {}
-    return {**row, "opens_at": slate.get("opens_at")}
+    return {
+        **row,
+        "opens_at": slate.get("opens_at"),
+        "stakes": slate.get("stakes", "play"),
+    }
+
+
+def is_play(row: dict) -> bool:
+    return row.get("stakes", "play") == "play"
+
+
+def books(store: SessionStore, stakes: str = "play") -> list:
+    """Every market of one kind, replayed, with its outcome.
+
+    Real money and play money never share a table: one settles to a wallet and
+    a leaderboard, the other to a list of who owes whom, and a standings table
+    mixing them would be measuring two different things in one column.
+    """
+    out = []
+    for row in store.markets():
+        row = with_slate(store, row)
+        if row.get("stakes", "play") != stakes:
+            continue
+        state = replay(market_config(row), logged(store.trades(row["market_id"])))
+        out.append((state, None if row["resolved"] is None else bool(row["resolved"])))
+    return out
+
+
+def spendable(store: SessionStore, user_id: str) -> int:
+    return store.balance(user_id, app_config.CONTRACTS_START)
 
 
 def market_view(store: SessionStore, row: dict, user_id: str | None,
@@ -120,10 +150,16 @@ def market_view(store: SessionStore, row: dict, user_id: str | None,
         "phase": phase(config, now, settled),
         "resolved": None if not settled else bool(row["resolved"]),
         "cap": config.position_cap,
+        # Which money this is. The one thing on the screen nobody may misread.
+        "stakes": row.get("stakes", "play"),
     }
     if user_id:
         held = state.position(user_id)
         view["you"] = held.as_dict(state.price_yes)
+        # What it would fetch if sold, not what the line says -- the same
+        # number the leaderboard uses, so the two never disagree on screen.
+        view["you"]["value"] = state.liquidation(user_id)
+        view["you"]["open_pnl"] = view["you"]["value"] - held.cash
         view["headroom"] = config.position_cap - max(held.yes, held.no)
     return view
 
@@ -155,6 +191,8 @@ def overview(
     return {
         "you": manager,
         "cap": app_config.CONTRACTS_CAP,
+        "start": app_config.CONTRACTS_START,
+        "balance": spendable(store, manager["user_id"]) if manager else None,
         "slates": out,
     }
 
@@ -203,15 +241,17 @@ def quote_trade(
     config = market_config(row)
     state = replay(config, logged(store.trades(body.market_id)))
 
+    balance = spendable(store, manager["user_id"]) if is_play(row) else None
+
     try:
         done = plan(
             state, manager["user_id"], body.side, body.shares,
-            now=_now(), settled=row["resolved"] is not None,
+            now=_now(), settled=row["resolved"] is not None, balance=balance,
         )
     except MarketError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    return {"indicative": True, **done.as_dict()}
+    return {"indicative": True, "balance": balance, **done.as_dict()}
 
 
 @router.post("/trade")
@@ -225,12 +265,18 @@ def make_trade(
     who = manager["user_id"]
     now = _now()
 
-    def price_trade(row: dict, log: list[dict], _when) -> dict:
+    def price_trade(row: dict, log: list[dict], conn) -> dict:
         row = with_slate(store, row)
         state = replay(market_config(row), logged(log))
+        # Read on the transaction's own connection: two fast clicks would
+        # otherwise both price against the same balance and spend it twice.
+        balance = (
+            store.balance(who, app_config.CONTRACTS_START, conn)
+            if is_play(row) else None
+        )
         done = plan(
             state, who, body.side, body.shares,
-            now=now, settled=row["resolved"] is not None,
+            now=now, settled=row["resolved"] is not None, balance=balance,
         )
         return done.as_dict()
 
@@ -243,7 +289,11 @@ def make_trade(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     row = store.market(body.market_id)
-    return {"traded": done, "market": market_view(store, row, who, now)}
+    return {
+        "traded": done,
+        "market": market_view(store, row, who, now),
+        "balance": spendable(store, who) if is_play(with_slate(store, row)) else None,
+    }
 
 
 @router.get("/me")
@@ -288,5 +338,41 @@ def my_book(
         "settled": settled_rows,
         "realised": realised,
         "unrealised": unrealised,
+        "balance": spendable(store, who),
+        "start": app_config.CONTRACTS_START,
         "as_of": now.isoformat(),
+    }
+
+
+@router.get("/leaderboard")
+def standings(
+    store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
+) -> dict:
+    """The season, play money only.
+
+    Ranked on equity -- balance plus what open positions would fetch if sold --
+    because ranking on cash alone makes buying anything look like a loss until
+    it settles, and puts whoever sat out on top.
+
+    Everyone appears, traded or not. A table showing eight of twelve reads as
+    broken rather than as eight people having been busy.
+    """
+    managers = store.managers()
+    names = {m["user_id"]: m["display_name"] or m["team_name"] for m in managers}
+
+    table = rank_managers(
+        books(store, "play"),
+        everyone=[m["user_id"] for m in managers],
+        start=app_config.CONTRACTS_START,
+    )
+
+    me = store.claimed_manager(owner)
+    return {
+        "start": app_config.CONTRACTS_START,
+        "you": me["user_id"] if me else None,
+        "standings": [
+            {"rank": i, "manager": names.get(s.user_id, s.user_id), **s.as_dict()}
+            for i, s in enumerate(table, 1)
+        ],
     }

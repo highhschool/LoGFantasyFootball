@@ -73,9 +73,11 @@ def app(tmp_path, monkeypatch, rankings_dir_2025, picks):
     monkeypatch.setattr(app_config, "SLEEPER_LEAGUE_ID", LEAGUE)
     monkeypatch.setattr(app_config, "ADMIN_TOKEN", "adm1n")
     monkeypatch.setattr(app_config, "ADMIN_EMAILS", set())
-    monkeypatch.setattr(app_config, "CONTRACTS_CAP", 5)
-    monkeypatch.setattr(app_config, "CONTRACTS_B", 10.0)
+    # The numbers that ship, so this file tests what the league plays.
+    monkeypatch.setattr(app_config, "CONTRACTS_CAP", 25)
+    monkeypatch.setattr(app_config, "CONTRACTS_B", 50.0)
     monkeypatch.setattr(app_config, "CONTRACTS_SPREAD", 1)
+    monkeypatch.setattr(app_config, "CONTRACTS_START", 100_000)
     monkeypatch.setattr(main, "_store", SessionStore(tmp_path / "c.db"))
     monkeypatch.setattr(main, "_sleeper", Fake(cache_dir=tmp_path))
     return main.app
@@ -231,7 +233,8 @@ class TestTrading:
     def test_the_cap_holds(self, app, market, codes, during):
         client = signed_in(app, codes["u1"])
         client.post("/api/contracts/trade",
-                    json={"market_id": market["market_id"], "side": "yes", "shares": 5})
+                    json={"market_id": market["market_id"], "side": "yes",
+                          "shares": app_config.CONTRACTS_CAP})
         r = client.post("/api/contracts/trade",
                         json={"market_id": market["market_id"], "side": "yes",
                               "shares": 1})
@@ -447,12 +450,14 @@ class TestItHoldsUnderConcurrency:
         import threading
 
         client = signed_in(app, codes["u1"])
+        cap = app_config.CONTRACTS_CAP
         results, lock = [], threading.Lock()
 
         def buy():
             r = client.post(
                 "/api/contracts/trade",
-                json={"market_id": market["market_id"], "side": "yes", "shares": 3},
+                json={"market_id": market["market_id"], "side": "yes",
+                      "shares": cap // 2 + 1},
             )
             with lock:
                 results.append(r.status_code)
@@ -465,7 +470,7 @@ class TestItHoldsUnderConcurrency:
 
         board = client.get("/api/contracts/me").json()
         held = board["open"][0]["yes"] if board["open"] else 0
-        assert held <= 5, f"cap breached: {held} contracts from {results}"
+        assert held <= cap, f"cap breached: {held} contracts from {results}"
         assert 200 in results, "at least one should have gone through"
 
     def test_simultaneous_buyers_each_get_their_own_price(
@@ -567,3 +572,279 @@ class TestRemovingAMarket:
         with TestClient(app) as anyone:
             r = anyone.delete(f"/api/admin/contracts/markets/{market['market_id']}")
         assert r.status_code == 404
+
+
+@pytest.fixture
+def play_slate(app):
+    with TestClient(app) as owner:
+        r = owner.post(
+            "/api/admin/contracts/slates", headers=ADMIN,
+            json={"name": "Play night", "kind": "draft", "stakes": "play",
+                  "draft_start": DRAFT.isoformat()},
+        )
+    return r.json()["slate"]
+
+
+@pytest.fixture
+def real_slate(app):
+    with TestClient(app) as owner:
+        r = owner.post(
+            "/api/admin/contracts/slates", headers=ADMIN,
+            json={"name": "For money", "kind": "draft", "stakes": "real",
+                  "draft_start": DRAFT.isoformat()},
+        )
+    return r.json()["slate"]
+
+
+def a_market(app, slate, player, pick_no=30):
+    with TestClient(app) as owner:
+        r = owner.post(
+            "/api/admin/contracts/markets", headers=ADMIN,
+            json={"slate_id": slate["slate_id"], "kind": "player_by_pick",
+                  "params": {"player_key": player.key, "pick": pick_no}},
+        )
+    assert r.status_code == 200, r.text
+    return r.json()["market"]
+
+
+def store_of():
+    from app import main
+
+    return main._store
+
+
+class TestWhichMoney:
+    def test_play_is_the_default(self, slate):
+        assert slate["stakes"] == "play", "the safe one wins a tie"
+
+    def test_a_real_slate_can_be_opened(self, real_slate):
+        assert real_slate["stakes"] == "real"
+
+    def test_a_market_carries_the_stakes_of_its_slate(self, app, play_slate, player):
+        made = a_market(app, play_slate, player)
+        with TestClient(app) as anyone:
+            board = anyone.get(
+                f"/api/contracts/slates/{made['slate_id']}").json()["markets"]
+        assert board[0]["stakes"] == "play"
+
+    def test_a_real_market_says_so_too(self, app, real_slate, player):
+        made = a_market(app, real_slate, player)
+        with TestClient(app) as anyone:
+            board = anyone.get(
+                f"/api/contracts/slates/{made['slate_id']}").json()["markets"]
+        assert board[0]["stakes"] == "real"
+
+
+class TestTheBankroll:
+    def test_everyone_starts_with_the_full_amount(self, app, codes):
+        client = signed_in(app, codes["u1"])
+        assert client.get("/api/contracts").json()["balance"] == 100_000
+
+    def test_buying_spends_it(self, app, play_slate, player, codes, during):
+        made = a_market(app, play_slate, player)
+        client = signed_in(app, codes["u1"])
+        out = client.post("/api/contracts/trade",
+                          json={"market_id": made["market_id"], "side": "yes",
+                                "shares": 25}).json()
+        assert out["balance"] == 100_000 - out["traded"]["cash"]
+
+    def test_selling_gives_most_of_it_back(self, app, play_slate, player,
+                                           codes, during):
+        made = a_market(app, play_slate, player)
+        client = signed_in(app, codes["u1"])
+        client.post("/api/contracts/trade",
+                    json={"market_id": made["market_id"], "side": "yes", "shares": 25})
+        out = client.post("/api/contracts/trade",
+                          json={"market_id": made["market_id"], "side": "yes",
+                                "shares": -25}).json()
+        assert 99_000 < out["balance"] < 100_000, "back, less the spread both ways"
+
+    def test_winning_puts_more_in_than_came_out(self, app, play_slate, player,
+                                                codes, picks, during):
+        made = a_market(app, play_slate, player)
+        client = signed_in(app, codes["u1"])
+        client.post("/api/contracts/trade",
+                    json={"market_id": made["market_id"], "side": "yes", "shares": 20})
+        picks.append(pick(4, player.name))
+        with TestClient(app) as owner:
+            owner.post(f"/api/admin/contracts/markets/{made['market_id']}/resolve",
+                       headers=ADMIN)
+        assert client.get("/api/contracts/me").json()["balance"] > 100_000
+
+
+class TestTheTwoBalancesAgree:
+    """One is SQL, the other replays every market.
+
+    `store.balance` exists because the affordability check has to run inside
+    the trade's write transaction. Two implementations of the same money
+    calculation is exactly the pair that drifts, so they are checked together.
+    """
+
+    def test_after_trading_across_markets(self, app, play_slate, codes,
+                                          during, pool_2025):
+        client = signed_in(app, codes["u1"])
+        for i, p in enumerate(pool_2025.players[10:14]):
+            made = a_market(app, play_slate, p, pick_no=40 + i)
+            client.post("/api/contracts/trade",
+                        json={"market_id": made["market_id"], "side": "yes",
+                              "shares": 5 + i})
+
+        assert store_of().balance("u1", 100_000) == \
+            client.get("/api/contracts/me").json()["balance"]
+
+    def test_after_settlement(self, app, play_slate, player, codes, picks, during):
+        made = a_market(app, play_slate, player)
+        client = signed_in(app, codes["u1"])
+        client.post("/api/contracts/trade",
+                    json={"market_id": made["market_id"], "side": "yes", "shares": 20})
+        picks.append(pick(4, player.name))
+        with TestClient(app) as owner:
+            owner.post(f"/api/admin/contracts/markets/{made['market_id']}/resolve",
+                       headers=ADMIN)
+
+        assert store_of().balance("u1", 100_000) == \
+            client.get("/api/contracts/me").json()["balance"]
+
+    def test_after_a_losing_market(self, app, play_slate, player, codes,
+                                   picks, during, pool_2025):
+        made = a_market(app, play_slate, player, pick_no=3)
+        client = signed_in(app, codes["u1"])
+        client.post("/api/contracts/trade",
+                    json={"market_id": made["market_id"], "side": "yes", "shares": 20})
+        picks.extend(pick(i, f"Somebody {i}") for i in range(1, 4))
+        with TestClient(app) as owner:
+            owner.post(f"/api/admin/contracts/markets/{made['market_id']}/resolve",
+                       headers=ADMIN)
+
+        assert store_of().balance("u1", 100_000) < 100_000
+        assert store_of().balance("u1", 100_000) == \
+            client.get("/api/contracts/me").json()["balance"]
+
+
+class TestRealMoneyKeepsOut:
+    def test_it_never_touches_the_wallet(self, app, real_slate, player,
+                                         codes, during):
+        made = a_market(app, real_slate, player)
+        client = signed_in(app, codes["u1"])
+        r = client.post("/api/contracts/trade",
+                        json={"market_id": made["market_id"], "side": "yes",
+                              "shares": 25})
+        assert r.status_code == 200, r.text
+        assert store_of().balance("u1", 100_000) == 100_000
+        assert r.json()["balance"] is None
+
+    def test_an_empty_wallet_still_trades_a_real_market(self, app, real_slate,
+                                                        player, codes, during,
+                                                        monkeypatch):
+        """There is no wallet to be empty. It settles up afterwards."""
+        monkeypatch.setattr(app_config, "CONTRACTS_START", 0)
+        made = a_market(app, real_slate, player)
+        r = signed_in(app, codes["u1"]).post(
+            "/api/contracts/trade",
+            json={"market_id": made["market_id"], "side": "yes", "shares": 25})
+        assert r.status_code == 200, r.text
+
+
+class TestYouCannotOverspend:
+    def test_a_trade_beyond_the_balance_is_refused(self, app, play_slate, player,
+                                                   codes, during, monkeypatch):
+        monkeypatch.setattr(app_config, "CONTRACTS_START", 100)
+        made = a_market(app, play_slate, player)
+        r = signed_in(app, codes["u1"]).post(
+            "/api/contracts/trade",
+            json={"market_id": made["market_id"], "side": "yes", "shares": 25})
+        assert r.status_code == 409
+        assert "you have" in r.json()["detail"]
+
+    def test_selling_is_allowed_with_nothing_left(self, app, play_slate, player,
+                                                  codes, during, monkeypatch):
+        made = a_market(app, play_slate, player)
+        client = signed_in(app, codes["u1"])
+        client.post("/api/contracts/trade",
+                    json={"market_id": made["market_id"], "side": "yes", "shares": 25})
+        monkeypatch.setattr(app_config, "CONTRACTS_START", 0)
+        out = client.post("/api/contracts/trade",
+                          json={"market_id": made["market_id"], "side": "yes",
+                                "shares": -25})
+        assert out.status_code == 200, "selling returns money rather than costing it"
+
+    def test_two_fast_clicks_cannot_spend_it_twice(self, app, play_slate, player,
+                                                   codes, during, monkeypatch):
+        """Why the check reads on the transaction's own connection."""
+        import threading
+
+        monkeypatch.setattr(app_config, "CONTRACTS_START", 1_600)
+        made = a_market(app, play_slate, player)
+        client = signed_in(app, codes["u1"])
+
+        codes_seen, lock = [], threading.Lock()
+
+        def buy():
+            r = client.post("/api/contracts/trade",
+                            json={"market_id": made["market_id"], "side": "yes",
+                                  "shares": 20})
+            with lock:
+                codes_seen.append(r.status_code)
+
+        threads = [threading.Thread(target=buy) for _ in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        left = store_of().balance("u1", 1_600)
+        assert left >= 0, f"overspent to {left} from {codes_seen}"
+
+
+class TestStandings:
+    def test_the_whole_league_appears(self, app, codes):
+        table = signed_in(app, codes["u1"]).get(
+            "/api/contracts/leaderboard").json()["standings"]
+        assert len(table) == 12
+        assert {r["equity"] for r in table} == {100_000}
+
+    def test_a_winner_rises(self, app, play_slate, player, codes, picks, during):
+        made = a_market(app, play_slate, player)
+        signed_in(app, codes["u1"]).post(
+            "/api/contracts/trade",
+            json={"market_id": made["market_id"], "side": "yes", "shares": 25})
+        picks.append(pick(4, player.name))
+        with TestClient(app) as owner:
+            owner.post(f"/api/admin/contracts/markets/{made['market_id']}/resolve",
+                       headers=ADMIN)
+
+        table = signed_in(app, codes["u2"]).get(
+            "/api/contracts/leaderboard").json()["standings"]
+        assert table[0]["user_id"] == "u1"
+        assert table[0]["rank"] == 1
+        assert table[0]["profit"] > 0
+
+    def test_a_loser_sinks_below_the_untraded(self, app, play_slate, player,
+                                              codes, picks, during):
+        made = a_market(app, play_slate, player, pick_no=3)
+        signed_in(app, codes["u1"]).post(
+            "/api/contracts/trade",
+            json={"market_id": made["market_id"], "side": "yes", "shares": 25})
+        picks.extend(pick(i, f"Somebody {i}") for i in range(1, 4))
+        with TestClient(app) as owner:
+            owner.post(f"/api/admin/contracts/markets/{made['market_id']}/resolve",
+                       headers=ADMIN)
+
+        table = signed_in(app, codes["u2"]).get(
+            "/api/contracts/leaderboard").json()["standings"]
+        assert table[-1]["user_id"] == "u1"
+
+    def test_it_marks_which_row_is_yours(self, app, codes):
+        client = signed_in(app, codes["u3"])
+        assert client.get("/api/contracts/leaderboard").json()["you"] == "u3"
+
+    def test_real_money_stays_off_it(self, app, real_slate, player, codes, during):
+        """Two kinds of money in one column would measure nothing."""
+        made = a_market(app, real_slate, player)
+        signed_in(app, codes["u1"]).post(
+            "/api/contracts/trade",
+            json={"market_id": made["market_id"], "side": "yes", "shares": 25})
+
+        table = signed_in(app, codes["u2"]).get(
+            "/api/contracts/leaderboard").json()["standings"]
+        assert {r["equity"] for r in table} == {100_000}

@@ -94,9 +94,15 @@ class TestBuyingIsBuying:
         with pytest.raises(ValueError):
             quote(0, 0, B, "maybe", 1)
 
-    def test_the_market_cannot_be_sold_below_empty(self):
-        with pytest.raises(ValueError):
-            quote(2, 0, B, YES, -3)
+    def test_the_book_may_go_wherever_the_trade_takes_it(self):
+        """It is a point on a curve, not a pile of shares.
+
+        A market seeded to open at 10c starts far below zero, and bounding the
+        coordinate made the positions in it unsellable. What a trader may sell
+        is bounded by what they hold, which `contracts.plan` enforces.
+        """
+        assert quote(2, 0, B, YES, -3).cash < 0
+        assert quote(-40, 0, B, YES, -5).cash < 0
 
 
 class TestTheHouseCannotBeMilked:

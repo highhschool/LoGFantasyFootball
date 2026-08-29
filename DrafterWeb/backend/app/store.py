@@ -709,8 +709,10 @@ class SessionStore:
         contracts and ten. `BEGIN IMMEDIATE` takes the write lock before the
         log is read, so the price charged is the price after everyone ahead.
 
-        `price_trade(config_row, trades, now)` does the pricing; the store
-        stays ignorant of the market maker.
+        `price_trade(market_row, trades, conn)` does the pricing; the store
+        stays ignorant of the market maker. The connection is handed over so a
+        balance can be read inside the same transaction rather than from
+        another one that cannot see it.
         """
         conn = self._connect()
         try:
@@ -727,7 +729,7 @@ class SessionStore:
                 (market_id,),
             ).fetchall()
 
-            done = price_trade(dict(market), [dict(r) for r in log], now)
+            done = price_trade(dict(market), [dict(r) for r in log], conn)
 
             stamp = _now()
             for leg in done["legs"]:
@@ -772,6 +774,45 @@ class SessionStore:
                 "UPDATE keeper_managers SET photo = ? WHERE user_id = ?",
                 (photo, user_id),
             )
+
+    def balance(self, user_id: str, start: int, conn=None) -> int:
+        """A manager's spendable play money, as two aggregates.
+
+        `core.wallet` is the authority on standings and does this by replaying
+        every market. This is the same figure reached in SQL, because the
+        affordability check has to run *inside* the trade's transaction -- two
+        fast clicks would otherwise both price against the same balance and
+        spend it twice. Replaying every market on another connection mid-write
+        is not something to do while holding the write lock.
+
+        The two are tested against each other, since a second implementation of
+        a money calculation is exactly the kind of thing that drifts.
+
+        Real-money slates are excluded. They settle to a list of who owes whom
+        and there is no wallet to spend from.
+        """
+        where = (
+            " FROM contract_trades t"
+            " JOIN contract_markets m ON m.market_id = t.market_id"
+            " JOIN contract_slates s ON s.slate_id = m.slate_id"
+            " WHERE t.user_id = ? AND s.stakes = 'play'"
+        )
+        own = conn or self._connect()
+        try:
+            paid = own.execute(
+                "SELECT COALESCE(SUM(t.cash), 0)" + where, (user_id,)
+            ).fetchone()[0]
+            won = own.execute(
+                "SELECT COALESCE(SUM(CASE WHEN (m.resolved = 1 AND t.side = 'yes')"
+                "  OR (m.resolved = 0 AND t.side = 'no') THEN t.shares ELSE 0 END), 0)"
+                + where + " AND m.resolved IS NOT NULL",
+                (user_id,),
+            ).fetchone()[0]
+        finally:
+            if conn is None:
+                own.close()
+
+        return start - paid + won * 100
 
     def resolve_market(self, market_id: str, yes_won: bool) -> bool:
         """Settle a market. Never re-settles one already called."""

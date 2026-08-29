@@ -34,6 +34,9 @@ router = APIRouter(prefix="/api/admin/contracts", tags=["admin"])
 class SlateIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     kind: str = Field(default="weekly", pattern="^(draft|weekly)$")
+    # Which money. Fixed for the slate's life: a market that changed halfway
+    # would owe two different kinds of settlement on the same trades.
+    stakes: str = Field(default="play", pattern="^(play|real)$")
     draft_start: str | None = None      # required for a draft slate
     opens_at: str | None = None         # defaults to the next Tuesday
 
@@ -156,7 +159,9 @@ def create_slate(
     except (SlateError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    slate_id = store.create_slate(body.name, body.kind, built.opens_at, built.closes_at)
+    slate_id = store.create_slate(
+        body.name, body.kind, built.opens_at, built.closes_at, body.stakes
+    )
     return {"slate": store.slate(slate_id)}
 
 
