@@ -398,17 +398,17 @@ def quote_cost(size: int) -> int:
 class TestTheShippedSizing:
     """The numbers the league actually plays at.
 
-    A cap only means something next to a bankroll. Five contracts of a
-    thousand dollars moves a whole season by eleven percent, which is a
-    leaderboard decided by rounding; five of a hundred leaves the least
-    disciplined manager on eight dollars by November. Two hundred is the
-    middle, simulated over eighteen slates.
+    A cap only means anything next to a bankroll, and scaling both together
+    changes nothing -- what moves the dial is the ratio. Ten of three hundred
+    puts ten percent of a season on a five-market night; four hundred takes it
+    back to seven, two hundred pushes it to fourteen but leaves the least
+    disciplined manager near thirty dollars. Simulated over eighteen slates.
     """
 
     def test_the_defaults_are_the_chosen_ones(self):
         from app.core.contracts import DEFAULT_B, DEFAULT_CAP, DEFAULT_SPREAD
 
-        assert (DEFAULT_CAP, DEFAULT_B, DEFAULT_SPREAD) == (5, 10.0, 1)
+        assert (DEFAULT_CAP, DEFAULT_B, DEFAULT_SPREAD) == (10, 20.0, 1)
 
     def test_the_cap_and_the_bankroll_travel_together(self):
         """Neither number means anything without the other."""
@@ -431,12 +431,12 @@ class TestTheShippedSizing:
                     "u1", YES, DEFAULT_CAP)
         assert (done.price_before, done.price_after) == (50, 62)
 
-    def test_a_maximum_buy_costs_about_three_dollars(self):
+    def test_a_maximum_buy_costs_a_few_dollars(self):
         from app.core.contracts import DEFAULT_B, DEFAULT_CAP
 
         done = plan(replay(market(b=DEFAULT_B, position_cap=DEFAULT_CAP), []),
                     "u1", YES, DEFAULT_CAP)
-        assert 270 <= done.cash <= 300
+        assert 500 <= done.cash <= 620
 
     def test_a_full_slate_is_an_eighth_of_a_season(self):
         """Nine markets maxed should be a dent, not the whole bankroll."""

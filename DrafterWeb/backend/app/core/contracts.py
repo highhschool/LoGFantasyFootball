@@ -27,19 +27,26 @@ from datetime import datetime, timezone
 
 from .lmsr import DOLLAR, NO, SIDES, YES, apply, cost, price_cents, quote
 
-# Five contracts, against a two hundred dollar season. A cap only means
-# something next to a bankroll: five of a thousand moves a whole season by
-# eleven percent, which is a leaderboard decided by rounding, and five of a
-# hundred leaves the least disciplined manager on eight dollars by November.
-# Two hundred is the middle -- simulated over eighteen slates, a manager who
-# maxes every market with a poor read bottoms out around a hundred and twenty
-# and never misses a market, while the league spreads across half its bankroll.
+# Ten contracts against a three hundred dollar season, chosen so a night
+# weighs something without a season being decided by one.
 #
-# `b` tracks the cap at twice it, which keeps one maximum buy worth about
-# twelve points of price whatever the two are scaled to.
-DEFAULT_B = 10.0
+# A cap only means anything next to a bankroll, and scaling both together
+# changes nothing: five of two hundred and twenty-five of a thousand are the
+# same game written in different numbers. What moves the dial is the ratio. At
+# ten and three hundred a five-market draft night puts ten percent of a season
+# in play, against seven at the old pair; four hundred would put it back to
+# seven and undo the change. Two hundred goes the other way -- fourteen percent
+# a night, but the least disciplined manager bottoms out near thirty dollars,
+# one bad run from being unable to afford a market.
+#
+# `b` is the market's depth: price is sigmoid(q / b), so it takes b contracts
+# to move a line from 50c to 73c. Holding it at twice the cap keeps one maximum
+# buy worth about twelve points whatever the pair is scaled to -- drop it to
+# match the cap and a single manager swings the line twenty-three points, which
+# reads as noise rather than opinion with only twelve people trading.
+DEFAULT_B = 20.0
 DEFAULT_SPREAD = 1      # cents per contract, each way
-DEFAULT_CAP = 5         # contracts per manager per market
+DEFAULT_CAP = 10        # contracts per manager per market
 OPENING_FLOOR, OPENING_CEILING = 5, 95
 
 # Where a market is in its life. Trading happens in exactly one of these.

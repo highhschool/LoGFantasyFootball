@@ -27,7 +27,7 @@ from .lmsr import DOLLAR
 
 # What everyone starts a season with, in cents. Sized against the five
 # contract cap -- see core/contracts.py for why the two travel together.
-START = 20_000
+START = 30_000
 
 
 @dataclass(frozen=True, slots=True)
