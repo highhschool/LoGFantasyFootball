@@ -1,0 +1,33 @@
+# Repo-wide exclusions.
+#
+# DrafterWeb keeps its own .gitignore for the things only it has -- the built
+# bundle, the databases, the caches it fetches. This file covers what every
+# tool in here generates just by being run.
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets. Nothing in this repo should carry a key, and this is the backstop
+# for the day something does.
+.env
+.env.*
+!.env.example
+
+# The drafter's run log, rewritten on every run by setup_logging(). Note this
+# is a file and not a logs/ rule: LeagueOfficeAI/logs/ holds archived quarterly
+# scoring, which is real data that happens to live under that name.
+FantasyDrafterAI/draft_log.txt
+
+# Windows, macOS and Office leftovers
+Thumbs.db
+desktop.ini
+.DS_Store
+~$*
+*.tmp
