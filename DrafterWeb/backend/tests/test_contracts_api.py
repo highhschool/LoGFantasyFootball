@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from app import config as app_config
 from app import main
 from app.integrations.sleeper import DraftInfo, Manager, SleeperPick
+from app.core.wallet import START
 from app.store import SessionStore
 
 CENTRAL = timezone(timedelta(hours=-5))
@@ -73,11 +74,15 @@ def app(tmp_path, monkeypatch, rankings_dir_2025, picks):
     monkeypatch.setattr(app_config, "SLEEPER_LEAGUE_ID", LEAGUE)
     monkeypatch.setattr(app_config, "ADMIN_TOKEN", "adm1n")
     monkeypatch.setattr(app_config, "ADMIN_EMAILS", set())
-    # The numbers that ship, so this file tests what the league plays.
-    monkeypatch.setattr(app_config, "CONTRACTS_CAP", 25)
-    monkeypatch.setattr(app_config, "CONTRACTS_B", 50.0)
-    monkeypatch.setattr(app_config, "CONTRACTS_SPREAD", 1)
-    monkeypatch.setattr(app_config, "CONTRACTS_START", 100_000)
+    # The numbers that ship, read rather than repeated, so this file follows
+    # the sizing instead of pinning a copy of it that can go stale.
+    from app.core.contracts import DEFAULT_B, DEFAULT_CAP, DEFAULT_SPREAD
+    from app.core.wallet import START
+
+    monkeypatch.setattr(app_config, "CONTRACTS_CAP", DEFAULT_CAP)
+    monkeypatch.setattr(app_config, "CONTRACTS_B", DEFAULT_B)
+    monkeypatch.setattr(app_config, "CONTRACTS_SPREAD", DEFAULT_SPREAD)
+    monkeypatch.setattr(app_config, "CONTRACTS_START", START)
     monkeypatch.setattr(main, "_store", SessionStore(tmp_path / "c.db"))
     monkeypatch.setattr(main, "_sleeper", Fake(cache_dir=tmp_path))
     return main.app
@@ -638,38 +643,38 @@ class TestWhichMoney:
 class TestTheBankroll:
     def test_everyone_starts_with_the_full_amount(self, app, codes):
         client = signed_in(app, codes["u1"])
-        assert client.get("/api/contracts").json()["balance"] == 100_000
+        assert client.get("/api/contracts").json()["balance"] == START
 
     def test_buying_spends_it(self, app, play_slate, player, codes, during):
         made = a_market(app, play_slate, player)
         client = signed_in(app, codes["u1"])
         out = client.post("/api/contracts/trade",
                           json={"market_id": made["market_id"], "side": "yes",
-                                "shares": 25}).json()
-        assert out["balance"] == 100_000 - out["traded"]["cash"]
+                                "shares": app_config.CONTRACTS_CAP}).json()
+        assert out["balance"] == START - out["traded"]["cash"]
 
     def test_selling_gives_most_of_it_back(self, app, play_slate, player,
                                            codes, during):
         made = a_market(app, play_slate, player)
         client = signed_in(app, codes["u1"])
         client.post("/api/contracts/trade",
-                    json={"market_id": made["market_id"], "side": "yes", "shares": 25})
+                    json={"market_id": made["market_id"], "side": "yes", "shares": app_config.CONTRACTS_CAP})
         out = client.post("/api/contracts/trade",
                           json={"market_id": made["market_id"], "side": "yes",
-                                "shares": -25}).json()
-        assert 99_000 < out["balance"] < 100_000, "back, less the spread both ways"
+                                "shares": -app_config.CONTRACTS_CAP}).json()
+        assert START - 100 < out["balance"] < START, "back, less the spread both ways"
 
     def test_winning_puts_more_in_than_came_out(self, app, play_slate, player,
                                                 codes, picks, during):
         made = a_market(app, play_slate, player)
         client = signed_in(app, codes["u1"])
         client.post("/api/contracts/trade",
-                    json={"market_id": made["market_id"], "side": "yes", "shares": 20})
+                    json={"market_id": made["market_id"], "side": "yes", "shares": app_config.CONTRACTS_CAP})
         picks.append(pick(4, player.name))
         with TestClient(app) as owner:
             owner.post(f"/api/admin/contracts/markets/{made['market_id']}/resolve",
                        headers=ADMIN)
-        assert client.get("/api/contracts/me").json()["balance"] > 100_000
+        assert client.get("/api/contracts/me").json()["balance"] > START
 
 
 class TestTheTwoBalancesAgree:
@@ -689,20 +694,20 @@ class TestTheTwoBalancesAgree:
                         json={"market_id": made["market_id"], "side": "yes",
                               "shares": 5 + i})
 
-        assert store_of().balance("u1", 100_000) == \
+        assert store_of().balance("u1", START) == \
             client.get("/api/contracts/me").json()["balance"]
 
     def test_after_settlement(self, app, play_slate, player, codes, picks, during):
         made = a_market(app, play_slate, player)
         client = signed_in(app, codes["u1"])
         client.post("/api/contracts/trade",
-                    json={"market_id": made["market_id"], "side": "yes", "shares": 20})
+                    json={"market_id": made["market_id"], "side": "yes", "shares": app_config.CONTRACTS_CAP})
         picks.append(pick(4, player.name))
         with TestClient(app) as owner:
             owner.post(f"/api/admin/contracts/markets/{made['market_id']}/resolve",
                        headers=ADMIN)
 
-        assert store_of().balance("u1", 100_000) == \
+        assert store_of().balance("u1", START) == \
             client.get("/api/contracts/me").json()["balance"]
 
     def test_after_a_losing_market(self, app, play_slate, player, codes,
@@ -710,14 +715,14 @@ class TestTheTwoBalancesAgree:
         made = a_market(app, play_slate, player, pick_no=3)
         client = signed_in(app, codes["u1"])
         client.post("/api/contracts/trade",
-                    json={"market_id": made["market_id"], "side": "yes", "shares": 20})
+                    json={"market_id": made["market_id"], "side": "yes", "shares": app_config.CONTRACTS_CAP})
         picks.extend(pick(i, f"Somebody {i}") for i in range(1, 4))
         with TestClient(app) as owner:
             owner.post(f"/api/admin/contracts/markets/{made['market_id']}/resolve",
                        headers=ADMIN)
 
-        assert store_of().balance("u1", 100_000) < 100_000
-        assert store_of().balance("u1", 100_000) == \
+        assert store_of().balance("u1", START) < START
+        assert store_of().balance("u1", START) == \
             client.get("/api/contracts/me").json()["balance"]
 
 
@@ -728,9 +733,9 @@ class TestRealMoneyKeepsOut:
         client = signed_in(app, codes["u1"])
         r = client.post("/api/contracts/trade",
                         json={"market_id": made["market_id"], "side": "yes",
-                              "shares": 25})
+                              "shares": app_config.CONTRACTS_CAP})
         assert r.status_code == 200, r.text
-        assert store_of().balance("u1", 100_000) == 100_000
+        assert store_of().balance("u1", START) == START
         assert r.json()["balance"] is None
 
     def test_an_empty_wallet_still_trades_a_real_market(self, app, real_slate,
@@ -741,7 +746,7 @@ class TestRealMoneyKeepsOut:
         made = a_market(app, real_slate, player)
         r = signed_in(app, codes["u1"]).post(
             "/api/contracts/trade",
-            json={"market_id": made["market_id"], "side": "yes", "shares": 25})
+            json={"market_id": made["market_id"], "side": "yes", "shares": app_config.CONTRACTS_CAP})
         assert r.status_code == 200, r.text
 
 
@@ -752,7 +757,7 @@ class TestYouCannotOverspend:
         made = a_market(app, play_slate, player)
         r = signed_in(app, codes["u1"]).post(
             "/api/contracts/trade",
-            json={"market_id": made["market_id"], "side": "yes", "shares": 25})
+            json={"market_id": made["market_id"], "side": "yes", "shares": app_config.CONTRACTS_CAP})
         assert r.status_code == 409
         assert "you have" in r.json()["detail"]
 
@@ -761,11 +766,11 @@ class TestYouCannotOverspend:
         made = a_market(app, play_slate, player)
         client = signed_in(app, codes["u1"])
         client.post("/api/contracts/trade",
-                    json={"market_id": made["market_id"], "side": "yes", "shares": 25})
+                    json={"market_id": made["market_id"], "side": "yes", "shares": app_config.CONTRACTS_CAP})
         monkeypatch.setattr(app_config, "CONTRACTS_START", 0)
         out = client.post("/api/contracts/trade",
                           json={"market_id": made["market_id"], "side": "yes",
-                                "shares": -25})
+                                "shares": -app_config.CONTRACTS_CAP})
         assert out.status_code == 200, "selling returns money rather than costing it"
 
     def test_two_fast_clicks_cannot_spend_it_twice(self, app, play_slate, player,
@@ -773,7 +778,7 @@ class TestYouCannotOverspend:
         """Why the check reads on the transaction's own connection."""
         import threading
 
-        monkeypatch.setattr(app_config, "CONTRACTS_START", 1_600)
+        monkeypatch.setattr(app_config, "CONTRACTS_START", 400)
         made = a_market(app, play_slate, player)
         client = signed_in(app, codes["u1"])
 
@@ -782,7 +787,7 @@ class TestYouCannotOverspend:
         def buy():
             r = client.post("/api/contracts/trade",
                             json={"market_id": made["market_id"], "side": "yes",
-                                  "shares": 20})
+                                  "shares": app_config.CONTRACTS_CAP})
             with lock:
                 codes_seen.append(r.status_code)
 
@@ -792,7 +797,7 @@ class TestYouCannotOverspend:
         for t in threads:
             t.join()
 
-        left = store_of().balance("u1", 1_600)
+        left = store_of().balance("u1", 400)
         assert left >= 0, f"overspent to {left} from {codes_seen}"
 
 
@@ -801,13 +806,13 @@ class TestStandings:
         table = signed_in(app, codes["u1"]).get(
             "/api/contracts/leaderboard").json()["standings"]
         assert len(table) == 12
-        assert {r["equity"] for r in table} == {100_000}
+        assert {r["equity"] for r in table} == {START}
 
     def test_a_winner_rises(self, app, play_slate, player, codes, picks, during):
         made = a_market(app, play_slate, player)
         signed_in(app, codes["u1"]).post(
             "/api/contracts/trade",
-            json={"market_id": made["market_id"], "side": "yes", "shares": 25})
+            json={"market_id": made["market_id"], "side": "yes", "shares": app_config.CONTRACTS_CAP})
         picks.append(pick(4, player.name))
         with TestClient(app) as owner:
             owner.post(f"/api/admin/contracts/markets/{made['market_id']}/resolve",
@@ -824,7 +829,7 @@ class TestStandings:
         made = a_market(app, play_slate, player, pick_no=3)
         signed_in(app, codes["u1"]).post(
             "/api/contracts/trade",
-            json={"market_id": made["market_id"], "side": "yes", "shares": 25})
+            json={"market_id": made["market_id"], "side": "yes", "shares": app_config.CONTRACTS_CAP})
         picks.extend(pick(i, f"Somebody {i}") for i in range(1, 4))
         with TestClient(app) as owner:
             owner.post(f"/api/admin/contracts/markets/{made['market_id']}/resolve",
@@ -843,8 +848,8 @@ class TestStandings:
         made = a_market(app, real_slate, player)
         signed_in(app, codes["u1"]).post(
             "/api/contracts/trade",
-            json={"market_id": made["market_id"], "side": "yes", "shares": 25})
+            json={"market_id": made["market_id"], "side": "yes", "shares": app_config.CONTRACTS_CAP})
 
         table = signed_in(app, codes["u2"]).get(
             "/api/contracts/leaderboard").json()["standings"]
-        assert {r["equity"] for r in table} == {100_000}
+        assert {r["equity"] for r in table} == {START}

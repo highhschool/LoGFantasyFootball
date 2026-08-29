@@ -19,7 +19,7 @@ const signed = (c: number) =>
 export function Leaderboard() {
   const [rows, setRows] = useState<Standing[]>([]);
   const [you, setYou] = useState<string | null>(null);
-  const [start, setStart] = useState(100_000);
+  const [start, setStart] = useState(20_000);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

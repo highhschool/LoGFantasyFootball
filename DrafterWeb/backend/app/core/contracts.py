@@ -27,15 +27,19 @@ from datetime import datetime, timezone
 
 from .lmsr import DOLLAR, NO, SIDES, YES, apply, cost, price_cents, quote
 
-# Sized against a season rather than a night. Twenty-five is the largest
-# position at which a manager who maxes every market with a poor read still
-# cannot be knocked out of a $1,000 season: simulated over eighteen slates they
-# bottom out near $500 and never miss a market, where fifty leaves them at $10
-# and seventy-five has them broke by November. `b` tracks the cap at twice it,
-# which keeps one maximum buy worth about twelve points of price.
-DEFAULT_B = 50.0
+# Five contracts, against a two hundred dollar season. A cap only means
+# something next to a bankroll: five of a thousand moves a whole season by
+# eleven percent, which is a leaderboard decided by rounding, and five of a
+# hundred leaves the least disciplined manager on eight dollars by November.
+# Two hundred is the middle -- simulated over eighteen slates, a manager who
+# maxes every market with a poor read bottoms out around a hundred and twenty
+# and never misses a market, while the league spreads across half its bankroll.
+#
+# `b` tracks the cap at twice it, which keeps one maximum buy worth about
+# twelve points of price whatever the two are scaled to.
+DEFAULT_B = 10.0
 DEFAULT_SPREAD = 1      # cents per contract, each way
-DEFAULT_CAP = 25        # contracts per manager per market
+DEFAULT_CAP = 5         # contracts per manager per market
 OPENING_FLOOR, OPENING_CEILING = 5, 95
 
 # Where a market is in its life. Trading happens in exactly one of these.

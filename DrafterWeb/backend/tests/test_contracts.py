@@ -387,20 +387,36 @@ class TestTheTradingWindow:
             market(opens_at=self.CLOSES, closes_at=self.OPENS)
 
 
+def quote_cost(size: int) -> int:
+    """What `size` contracts cost at the shipped sizing, from an even market."""
+    from app.core.contracts import DEFAULT_B, DEFAULT_CAP
+
+    return plan(replay(market(b=DEFAULT_B, position_cap=DEFAULT_CAP), []),
+                "u1", YES, size).cash
+
+
 class TestTheShippedSizing:
     """The numbers the league actually plays at.
 
-    Chosen against a season rather than a night: twenty-five is the largest
-    position at which a manager who maxes every market with a poor read still
-    cannot be knocked out of a $1,000 season. Simulated over eighteen slates
-    they bottom out near $500 and never miss a market; at fifty they reach $10,
-    and at seventy-five they are broke by November and miss seventy-four.
+    A cap only means something next to a bankroll. Five contracts of a
+    thousand dollars moves a whole season by eleven percent, which is a
+    leaderboard decided by rounding; five of a hundred leaves the least
+    disciplined manager on eight dollars by November. Two hundred is the
+    middle, simulated over eighteen slates.
     """
 
     def test_the_defaults_are_the_chosen_ones(self):
         from app.core.contracts import DEFAULT_B, DEFAULT_CAP, DEFAULT_SPREAD
 
-        assert (DEFAULT_CAP, DEFAULT_B, DEFAULT_SPREAD) == (25, 50.0, 1)
+        assert (DEFAULT_CAP, DEFAULT_B, DEFAULT_SPREAD) == (5, 10.0, 1)
+
+    def test_the_cap_and_the_bankroll_travel_together(self):
+        """Neither number means anything without the other."""
+        from app.core.contracts import DEFAULT_CAP
+        from app.core.wallet import START
+
+        most = quote_cost(DEFAULT_CAP)
+        assert 8 <= START / most <= 100, "a season should be tens of markets, not two"
 
     def test_liquidity_tracks_the_cap(self):
         """b at twice the cap keeps one maximum buy worth about twelve points."""
@@ -415,12 +431,19 @@ class TestTheShippedSizing:
                     "u1", YES, DEFAULT_CAP)
         assert (done.price_before, done.price_after) == (50, 62)
 
-    def test_a_maximum_buy_costs_about_fourteen_dollars(self):
+    def test_a_maximum_buy_costs_about_three_dollars(self):
         from app.core.contracts import DEFAULT_B, DEFAULT_CAP
 
         done = plan(replay(market(b=DEFAULT_B, position_cap=DEFAULT_CAP), []),
                     "u1", YES, DEFAULT_CAP)
-        assert 1_350 <= done.cash <= 1_500
+        assert 270 <= done.cash <= 300
+
+    def test_a_full_slate_is_an_eighth_of_a_season(self):
+        """Nine markets maxed should be a dent, not the whole bankroll."""
+        from app.core.contracts import DEFAULT_CAP
+        from app.core.wallet import START
+
+        assert 0.05 < 9 * quote_cost(DEFAULT_CAP) / START < 0.25
 
     def test_the_whole_league_maxed_still_leaves_room(self):
         from app.core.contracts import DEFAULT_B, DEFAULT_CAP

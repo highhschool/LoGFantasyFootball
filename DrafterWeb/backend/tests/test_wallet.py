@@ -14,6 +14,7 @@ from app.core.contracts import MarketConfig, plan, replay
 from app.core.lmsr import NO, YES
 from app.core.wallet import START, Standing, leaderboard, standings
 
+# The shipped sizing, since a wallet is only meaningful against it.
 EVEN = MarketConfig(market_id="m1", question="q?", opening=50)
 
 
@@ -57,24 +58,24 @@ class TestAnUntouchedSeason:
 
 class TestSpendingAndWorth:
     def test_buying_moves_money_out_of_the_balance(self):
-        table = standings([book([("u1", YES, 10)])])
+        table = standings([book([("u1", YES, 4)])])
         assert table["u1"].balance < START
         assert table["u1"].staked > 0
 
     def test_but_not_out_of_your_equity(self):
         """Otherwise buying anything reads as a loss until it settles."""
-        table = standings([book([("u1", YES, 10)])])
+        table = standings([book([("u1", YES, 4)])])
         assert table["u1"].equity == pytest.approx(START, abs=200)
 
     def test_the_spread_is_the_only_immediate_cost(self):
-        table = standings([book([("u1", YES, 10)])])
+        table = standings([book([("u1", YES, 4)])])
         assert table["u1"].open_pnl < 0
         assert table["u1"].open_pnl > -100, "a cent a contract, not more"
 
     def test_a_market_moving_your_way_shows_as_open_profit(self):
         b = Book()
-        b.buy("u1", YES, 10)
-        b.buy("u2", YES, 20)          # pushes the line up under u1
+        b.buy("u1", YES, 4)
+        b.buy("u2", YES, 5)          # pushes the line up under u1
         table = standings([(b.state, None)])
         assert table["u1"].open_pnl > 0
         assert table["u1"].balance < table["u1"].equity
@@ -82,25 +83,25 @@ class TestSpendingAndWorth:
 
 class TestSettlement:
     def test_winning_pays_a_dollar_a_contract(self):
-        table = standings([book([("u1", YES, 10)], outcome=True)])
+        table = standings([book([("u1", YES, 4)], outcome=True)])
         assert table["u1"].balance > START
         assert table["u1"].settled_pnl > 0
         assert table["u1"].staked == 0, "nothing is tied up any more"
 
     def test_losing_costs_what_it_cost(self):
-        table = standings([book([("u1", YES, 10)], outcome=False)])
+        table = standings([book([("u1", YES, 4)], outcome=False)])
         assert table["u1"].balance < START
         assert table["u1"].settled_pnl == table["u1"].profit
 
     def test_a_settled_market_stops_being_marked(self):
-        table = standings([book([("u1", YES, 10)], outcome=True)])
+        table = standings([book([("u1", YES, 4)], outcome=True)])
         assert table["u1"].open_pnl == 0
         assert table["u1"].balance == table["u1"].equity
 
     def test_the_two_sides_are_a_zero_sum_against_the_house(self):
         b = Book()
-        b.buy("u1", YES, 10)
-        b.buy("u2", NO, 10)
+        b.buy("u1", YES, 4)
+        b.buy("u2", NO, 4)
         state = b.state
         table = standings([(state, True)])
         league = sum(s.profit for s in table.values())
@@ -119,7 +120,7 @@ class TestAcrossMarkets:
         assert table["u1"].staked > 0, "the open one is still tied up"
 
     def test_equity_is_balance_plus_what_is_still_riding(self):
-        books = [book([("u1", YES, 8)], outcome=True), book([("u1", YES, 8)])]
+        books = [book([("u1", YES, 3)], outcome=True), book([("u1", YES, 3)])]
         s = standings(books)["u1"]
         assert s.equity > s.balance
 
@@ -132,8 +133,8 @@ class TestAcrossMarkets:
 class TestTheLeaderboard:
     def test_it_ranks_on_equity(self):
         table = leaderboard([
-            book([("winner", YES, 20)], outcome=True),
-            book([("loser", YES, 20)], outcome=False),
+            book([("winner", YES, 5)], outcome=True),
+            book([("loser", YES, 5)], outcome=False),
         ], everyone=["winner", "loser", "quiet"])
 
         assert [s.user_id for s in table] == ["winner", "quiet", "loser"]
@@ -141,8 +142,8 @@ class TestTheLeaderboard:
     def test_sitting_out_does_not_win(self):
         """Somebody up on paper outranks somebody who never played."""
         b = Book()
-        b.buy("bold", YES, 10)
-        b.buy("other", YES, 25)      # moves the line in bold's favour
+        b.buy("bold", YES, 4)
+        b.buy("other", YES, 5)      # moves the line in bold's favour
         table = leaderboard([(b.state, None)], everyone=["bold", "quiet", "other"])
         assert table[0].user_id == "bold"
 
@@ -162,25 +163,25 @@ class TestTheBalanceIsEnforced:
     def test_you_cannot_spend_what_you_do_not_have(self):
         b = Book()
         with pytest.raises(Exception, match="you have"):
-            b.buy("u1", YES, 25, balance=50)
+            b.buy("u1", YES, 5, balance=50)
 
     def test_what_you_can_afford_goes_through(self):
         b = Book()
-        b.buy("u1", YES, 25, balance=START)
-        assert b.state.position("u1").yes == 25
+        b.buy("u1", YES, 5, balance=START)
+        assert b.state.position("u1").yes == 5
 
     def test_selling_is_never_refused_for_want_of_money(self):
         """It returns money rather than costing it."""
         b = Book()
-        b.buy("u1", YES, 20)
-        out = b.buy("u1", YES, -20, balance=0)
+        b.buy("u1", YES, 5)
+        out = b.buy("u1", YES, -5, balance=0)
         assert out.cash < 0
 
     def test_no_balance_means_no_check(self):
         """A real-money slate settles up afterwards and has no wallet."""
         b = Book()
-        b.buy("u1", YES, 25, balance=None)
-        assert b.state.position("u1").yes == 25
+        b.buy("u1", YES, 5, balance=None)
+        assert b.state.position("u1").yes == 5
 
 
 class TestASeasonHolds:
@@ -188,7 +189,7 @@ class TestASeasonHolds:
         """Why the cap is twenty-five: eight maxed markets, one bad week."""
         books = []
         for i in range(8):
-            books.append(book([("u1", YES, 25)], outcome=False,
+            books.append(book([("u1", YES, 5)], outcome=False,
                               config=MarketConfig(f"m{i}", "q?", opening=50)))
         left = standings(books)["u1"].balance
         assert left > START * 0.85, "a wholly wrong week costs under 15%"
@@ -203,17 +204,17 @@ class TestYouCannotMarkYourOwnPosition:
     """
 
     def test_a_fresh_buy_is_never_instantly_up(self):
-        for size in (1, 5, 10, 25):
+        for size in (1, 2, 3, 5):
             table = standings([book([("u1", YES, size)])])
             assert table["u1"].open_pnl <= 0, size
 
     def test_it_is_down_by_about_the_spread(self):
-        table = standings([book([("u1", YES, 10)])])
+        table = standings([book([("u1", YES, 4)])])
         assert -300 < table["u1"].open_pnl < 0
 
     def test_marking_at_the_line_would_have_shown_a_profit(self):
         """The bug this guards, stated so the guard cannot be quietly removed."""
-        state, _ = book([("u1", YES, 25)])
+        state, _ = book([("u1", YES, 5)])
         naive = state.position("u1").value(state.price_yes)
         honest = state.liquidation("u1")
         assert naive > state.position("u1").cash, "the tempting number invents money"
@@ -226,7 +227,7 @@ class TestYouCannotMarkYourOwnPosition:
         a price it pushed up, and selling recovers part of that move. What
         cannot happen is getting back more than was paid.
         """
-        for size in (1, 5, 10, 25):
+        for size in (1, 2, 3, 5):
             state, _ = book([("u1", YES, size)])
             paid = state.position("u1").cash
             back = state.liquidation("u1")
@@ -236,9 +237,9 @@ class TestYouCannotMarkYourOwnPosition:
     def test_someone_elses_buying_is_a_real_gain(self):
         """What the mark should reward: being right before the room."""
         b = Book()
-        b.buy("u1", YES, 10)
+        b.buy("u1", YES, 4)
         before = standings([(b.state, None)])["u1"].open_pnl
-        b.buy("u2", YES, 25)
+        b.buy("u2", YES, 5)
         assert standings([(b.state, None)])["u1"].open_pnl > before
 
     def test_holding_nothing_liquidates_to_nothing(self):
