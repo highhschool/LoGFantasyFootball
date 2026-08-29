@@ -21,7 +21,10 @@ from pydantic import BaseModel, Field
 from .. import config as app_config
 from ..admin import require_admin
 from ..core.contracts import MarketConfig, phase, replay, settle_all
-from ..core.draft_markets import Board, TemplateError, build, template
+from ..core.draft_markets import (
+    Board, TemplateError, build, suggest as suggest_markets, template,
+)
+from ..core.draft_markets import _subject as market_subject
 from ..core.pot import payouts as split_pot
 from ..core.wallet import leaderboard as rank_managers
 from ..core.rankings import PlayerPool
@@ -462,3 +465,79 @@ def unrecord_ante(
     if not store.clear_ante(user_id):
         raise HTTPException(status_code=404, detail="they were not marked as paid")
     return pot(request, store)
+
+
+# ------------------------------------------------------- picking a slate
+
+def _shape_of(store: SessionStore, slate_id: str) -> dict[str, int]:
+    """How many of each kind a slate ran, which is what "like last week" means."""
+    counts: dict[str, int] = {}
+    for row in store.markets(slate_id):
+        counts[row["kind"]] = counts.get(row["kind"], 0) + 1
+    return counts
+
+
+def _subjects_on(store: SessionStore, slate_id: str) -> set[str]:
+    """What a slate is already about, so nothing is offered twice."""
+    return {
+        market_subject(row["kind"], json.loads(row["params_json"]))
+        for row in store.markets(slate_id)
+    }
+
+
+@router.get("/suggest")
+def suggest(
+    request: Request,
+    slate_id: str,
+    limit: int = 10,
+    like: str | None = None,
+    pool: PlayerPool = Depends(get_pool),
+    store: SessionStore = Depends(get_store),
+    client: SleeperClient = Depends(get_client),
+) -> dict:
+    """A shortlist, rather than a blank page.
+
+    Every player against every plausible pick and every position against every
+    round, ranked by how close the model puts them to even -- because a market
+    at 90c has no argument in it. Whatever the slate already covers is left
+    out, as is anything the draft has answered.
+
+    `like` names a previous slate and weights the mix towards the kinds it ran,
+    which is the whole of "the same questions as last week": the shapes carry
+    over, the subjects and the prices do not.
+    """
+    require_admin(request)
+
+    slate = store.slate(slate_id)
+    if slate is None:
+        raise HTTPException(status_code=404, detail="no such slate")
+
+    board = _board(client)
+    shape = _shape_of(store, like) if like else None
+
+    return {
+        "slate_id": slate_id,
+        "like": like,
+        "shape": shape,
+        "suggestions": suggest_markets(
+            pool, board,
+            exclude=_subjects_on(store, slate_id),
+            shape=shape,
+            limit=max(1, min(limit, 40)),
+        ),
+    }
+
+
+@router.get("/slates/{slate_id}/shape")
+def slate_shape(
+    slate_id: str,
+    request: Request,
+    store: SessionStore = Depends(get_store),
+) -> dict:
+    """What a slate was made of, for copying onto the next one."""
+    require_admin(request)
+    if store.slate(slate_id) is None:
+        raise HTTPException(status_code=404, detail="no such slate")
+
+    shape = _shape_of(store, slate_id)
+    return {"slate_id": slate_id, "shape": shape, "markets": sum(shape.values())}

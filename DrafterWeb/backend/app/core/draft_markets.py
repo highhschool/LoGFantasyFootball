@@ -238,3 +238,90 @@ def build(key: str, params: dict, pool: PlayerPool, board: Board) -> dict:
         "question": kind.question(params, pool),
         "opening": kind.opening(params, pool),
     }
+
+
+# ------------------------------------------------------------- suggestions
+
+# Where a market is worth opening. A line at 90c has no argument in it --
+# everyone takes the same side, the price never moves, and it settles as
+# everybody expected. The interesting ones sit near a coin flip.
+ARGUABLE = 25          # cents either side of even
+DEPTH = 80             # players deep enough to matter in a fifteen-round draft
+PICKS = (3, 6, 12, 18, 24, 36, 48, 60, 84, 120)
+
+
+def _subject(kind: str, params: dict) -> str:
+    """What a candidate is *about*, so a shortlist is not ten of one player."""
+    if kind == PlayerByPick.key:
+        return f"player:{params['player_key']}"
+    if kind == PositionInRound.key:
+        return f"position:{params['position']}"
+    return f"{kind}:{sorted(params.items())}"
+
+
+def suggest(
+    pool: PlayerPool,
+    board: Board,
+    exclude: set[str] | None = None,
+    shape: dict[str, int] | None = None,
+    limit: int = 10,
+) -> list[dict]:
+    """The most arguable markets this board can still offer.
+
+    Every player against every plausible pick, and every position against every
+    round, ranked by how close the model puts them to even. Anything the draft
+    has already answered is dropped -- the same check that refuses to open one.
+
+    One candidate per subject, so a shortlist is ten different arguments rather
+    than ten framings of the same player. `exclude` takes the subjects already
+    on a slate; `shape` weights the mix towards a previous slate's kinds, which
+    is what makes "the same questions as last week" mean anything.
+
+    Manager markets are left out on purpose. They open where the commissioner
+    puts them rather than where ADP does, so there is no model opinion to rank
+    them by -- and picking which manager to needle is the fun part.
+    """
+    taken = exclude or set()
+    found: list[tuple[int, dict]] = []
+
+    def consider(kind, params):
+        subject = _subject(kind, params)
+        if subject in taken:
+            return
+        try:
+            made = build(kind, params, pool, board)
+        except TemplateError:
+            return                       # already decided, or unbuildable
+        found.append((abs(made["opening"] - 50), {**made, "subject": subject}))
+
+    for player in pool.players[:DEPTH]:
+        for pick in PICKS:
+            consider(PlayerByPick.key, {"player_key": player.key, "pick": pick})
+
+    for position in sorted({p.position for p in pool.players}):
+        for rnd in range(1, board.rounds + 1):
+            consider(PositionInRound.key, {"position": position, "round": rnd})
+
+    # Closest to even first, then thinned to one per subject.
+    found.sort(key=lambda row: row[0])
+    best: dict[str, dict] = {}
+    for distance, made in found:
+        if distance > ARGUABLE:
+            break
+        best.setdefault(made["subject"], made)
+
+    ordered = sorted(best.values(), key=lambda m: abs(m["opening"] - 50))
+    if not shape:
+        return ordered[:limit]
+
+    # Fill each kind to the share it had last week, then top up from the rest.
+    out: list[dict] = []
+    for kind, wanted in sorted(shape.items(), key=lambda kv: -kv[1]):
+        matching = [m for m in ordered if m["kind"] == kind and m not in out]
+        out.extend(matching[:wanted])
+    for made in ordered:
+        if len(out) >= limit:
+            break
+        if made not in out:
+            out.append(made)
+    return out[:limit]

@@ -184,11 +184,13 @@
 
       <div class="bar">
         <button id="new-slate">New draft slate</button>
+        <button id="suggest">Suggest markets</button>
         <button id="settle">Settle what the draft has answered</button>
         <button id="refresh-contracts">Refresh</button>
       </div>
 
       <div id="slate-form" hidden></div>
+      <div id="suggestions" hidden></div>
 
       <div class="wrap">
         <table>
@@ -700,6 +702,88 @@
     if (r.ok) return loadContracts();
     drop.textContent = `Failed: ${(await r.json()).detail || r.status}`;
   });
+
+  // A shortlist rather than a blank page. Ninety markets get built over a
+  // season, six every Tuesday, and picking them from nothing is the part that
+  // stops being fun in about week three.
+  document.getElementById("suggest").addEventListener("click", async (e) => {
+    const box = document.getElementById("suggestions");
+    if (!box.hidden) { box.hidden = true; return; }
+
+    const d = await fetch("/api/admin/contracts").then((r) => r.json());
+    if (!d.slates.length) {
+      box.hidden = false;
+      box.innerHTML = '<p class="err">Open a slate first.</p>';
+      return;
+    }
+
+    box.hidden = false;
+    box.innerHTML = `
+      <div class="bar">
+        <select id="sg-slate">${d.slates.map((s) =>
+          `<option value="${s.slate_id}">${escape(s.name)}</option>`).join("")}</select>
+        <select id="sg-like">
+          <option value="">Any mix</option>
+          ${d.slates.map((s) =>
+            `<option value="${s.slate_id}">Same shape as ${escape(s.name)}</option>`).join("")}
+        </select>
+        <button id="sg-go">Find</button>
+      </div>
+      <div id="sg-out"></div>`;
+
+    document.getElementById("sg-go").addEventListener("click", findSuggestions);
+    findSuggestions();
+  });
+
+  async function findSuggestions() {
+    const slate = document.getElementById("sg-slate").value;
+    const like = document.getElementById("sg-like").value;
+    const out = document.getElementById("sg-out");
+    out.innerHTML = '<p class="muted">Searching the board…</p>';
+
+    const url = `/api/admin/contracts/suggest?slate_id=${slate}&limit=10`
+      + (like ? `&like=${like}` : "");
+    const d = await fetch(url).then((r) => r.json());
+
+    if (!d.suggestions.length) {
+      out.innerHTML = '<p class="muted">Nothing arguable left that this slate '
+        + 'does not already cover.</p>';
+      return;
+    }
+
+    out.innerHTML = `
+      ${d.shape ? `<p class="note">Weighted to ${Object.entries(d.shape)
+        .map(([k, n]) => `${n} ${escape(k.replace(/_/g, " "))}`).join(", ")}.</p>` : ""}
+      <div class="wrap"><table>
+        <thead><tr><th class="num">Opens</th><th>Market</th><th></th></tr></thead>
+        <tbody>${d.suggestions.map((m, i) => `
+          <tr>
+            <td class="num">${m.opening}&cent;</td>
+            <td>${escape(m.question)}</td>
+            <td><button data-add="${i}">Add</button></td>
+          </tr>`).join("")}</tbody>
+      </table></div>`;
+
+    out.querySelectorAll("[data-add]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        btn.textContent = "Adding…";
+        const m = d.suggestions[Number(btn.dataset.add)];
+        const r = await fetch("/api/admin/contracts/markets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slate_id: slate, kind: m.kind, params: m.params }),
+        });
+        if (r.ok) {
+          btn.textContent = "Added";
+          await loadContracts();
+        } else {
+          btn.textContent = `Failed: ${(await r.json()).detail || r.status}`;
+          btn.disabled = false;
+        }
+      });
+    });
+  }
 
   // The only real money in the tool. The pot is exactly what people put in,
   // so it cannot pay out more than it holds and nobody is a counterparty.
