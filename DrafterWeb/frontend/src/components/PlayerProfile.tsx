@@ -5,7 +5,7 @@ import { Modal } from "./Modal";
 import { PositionBadge } from "./PositionBadge";
 
 /** Column headings, since the API sends the stat keys it stored. */
-const HEADING: Record<string, string> = {
+export const HEADING: Record<string, string> = {
   gp: "G", pts_ppr: "PTS",
   pass_cmp: "CMP", pass_att: "ATT", pass_yd: "PYD", pass_td: "PTD",
   pass_int: "INT",
@@ -17,7 +17,7 @@ const HEADING: Record<string, string> = {
   pts_allow: "PA",
 };
 
-const num = (v: number | null | undefined) =>
+export const num = (v: number | null | undefined) =>
   v === null || v === undefined ? "—" : Number.isInteger(v) ? String(v) : v.toFixed(1);
 
 /**

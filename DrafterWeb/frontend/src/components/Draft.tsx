@@ -3,6 +3,7 @@ import { api, ApiError, type AdpProvenance } from "../api";
 import { AdpBadge } from "./AdpBadge";
 import type { Advice, DraftSession, Player } from "../types";
 import { AdvicePanel } from "./AdvicePanel";
+import { ComparePanel } from "./ComparePanel";
 import { BoardGrid } from "./BoardGrid";
 import {
   pauseFor,
@@ -73,6 +74,24 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
   // it, for when you want to read the whole board rather than pick from it.
   const [wideBoard, setWideBoard] = useState(false);
   const [boardHeight, setBoardHeight] = useState(readStoredHeight);
+
+  // Who is being weighed against whom. Kept here rather than in the list
+  // because it drives the panel in the other column, and held as whole players
+  // rather than keys so a comparison survives its subjects being drafted --
+  // they leave the list, and with them the only tick that could clear them.
+  const [compare, setCompare] = useState<Player[]>([]);
+
+  const toggleCompare = (player: Player) =>
+    setCompare((held) => {
+      if (held.some((h) => h.key === player.key)) {
+        return held.filter((h) => h.key !== player.key);
+      }
+      // The list disables both of these, so reaching them means something got
+      // past it -- drop the click rather than showing a mismatched pair.
+      if (held.length >= 2) return held;
+      if (held.length && held[0].position !== player.position) return held;
+      return [...held, player];
+    });
 
   // Remember where the divider was left. Wrapped because storage throws
   // outright in some privacy modes rather than just returning nothing.
@@ -359,6 +378,9 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
                 setPacing(speed !== "instant");
                 pickAndPace(p.key);
               }}
+              compare={compare.map((c) => c.key)}
+              comparePosition={compare[0]?.position ?? null}
+              onCompare={toggleCompare}
               // Where your next turn lands, so a profile can say whether he
               // survives to it rather than quoting a probability of nothing.
               atPick={
@@ -376,6 +398,17 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
           </div>
 
           <div className="flex min-w-0 flex-col gap-3 lg:min-h-0 lg:overflow-y-auto">
+            {/* The same corner, answering the same question from the other
+                end: the advisor picks for you, the comparison lets you settle
+                it yourself. It gives the corner back the moment nothing is
+                ticked, so the default view is never something to dismiss. */}
+            {compare.length > 0 ? (
+              <ComparePanel
+                picked={compare}
+                onRemove={toggleCompare}
+                onClear={() => setCompare([])}
+              />
+            ) : (
             <AdvicePanel
               atPick={
                 session.on_the_clock && session.picks_until_your_next !== null
@@ -391,6 +424,7 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
                 pickAndPace(a.key);
               }}
             />
+            )}
             <RosterPanel session={session} />
           </div>
         </div>

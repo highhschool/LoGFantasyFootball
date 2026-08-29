@@ -14,6 +14,11 @@ interface Props {
   onSearch: (value: string) => void;
   onPosition: (value: string) => void;
   onDraft: (player: Player) => void;
+  /** Keys of the players being compared, at most two and all one position. */
+  compare: string[];
+  /** The position a comparison is locked to, once one is under way. */
+  comparePosition: Position | null;
+  onCompare: (player: Player) => void;
   /** Your next pick, so a profile can say whether he lasts to it. */
   atPick?: number;
   className?: string;
@@ -29,6 +34,9 @@ export function PlayerTable({
   onSearch,
   onPosition,
   onDraft,
+  compare,
+  comparePosition,
+  onCompare,
   atPick,
   className = "",
   style,
@@ -61,6 +69,12 @@ export function PlayerTable({
         </div>
       </header>
 
+      {/* Naming the column, since a bare checkbox beside a player is as
+          likely to read as "shortlist" or "hide" as it is "compare". */}
+      <p className="border-b border-rule px-3 py-1 text-[10px] font-semibold tracking-wider text-ink-3 uppercase">
+        Compare
+      </p>
+
       <div className="min-h-0 flex-1 overflow-y-auto">
         {loading && <p className="p-4 text-sm text-ink-3">Loading…</p>}
 
@@ -88,6 +102,14 @@ export function PlayerTable({
                 player.ffc_id ? "cursor-pointer" : ""
               }`}
             >
+              <CompareBox
+                player={player}
+                checked={compare.includes(player.key)}
+                full={compare.length >= 2}
+                locked={comparePosition}
+                onToggle={onCompare}
+              />
+
               <PositionBadge position={player.position} />
 
               <div className="min-w-0 flex-1">
@@ -130,6 +152,61 @@ export function PlayerTable({
         />
       )}
     </section>
+  );
+}
+
+/**
+ * The tick that puts a player up against another.
+ *
+ * Disabled rather than hidden when it cannot be used, and each reason says
+ * itself on hover: two is the most a table can be read across, the columns are
+ * chosen by position so a pair has to share one, and a player the rankings do
+ * not carry has no seasons to show.
+ */
+function CompareBox({
+  player,
+  checked,
+  full,
+  locked,
+  onToggle,
+}: {
+  player: Player;
+  checked: boolean;
+  full: boolean;
+  locked: Position | null;
+  onToggle: (player: Player) => void;
+}) {
+  const wrongPosition = locked !== null && locked !== player.position;
+  const noStats = !player.ffc_id;
+  // Unticking has to stay available whatever else is true, or a full pair
+  // would lock itself in.
+  const disabled = !checked && (noStats || wrongPosition || full);
+
+  const why = noStats
+    ? "No season data for this player"
+    : wrongPosition
+      ? `Comparing ${locked}s — clear it to compare ${player.position}s`
+      : full
+        ? "Two at a time; untick one first"
+        : checked
+          ? `Stop comparing ${player.name}`
+          : `Compare ${player.name}`;
+
+  return (
+    <input
+      type="checkbox"
+      checked={checked}
+      disabled={disabled}
+      // The row opens a profile; ticking a box in it should not.
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => {
+        e.stopPropagation();
+        onToggle(player);
+      }}
+      aria-label={why}
+      title={why}
+      className="size-4 shrink-0 accent-accent disabled:opacity-25"
+    />
   );
 }
 
