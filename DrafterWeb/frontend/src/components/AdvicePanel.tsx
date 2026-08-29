@@ -51,7 +51,20 @@ export function AdvicePanel({
       ) : (
         <ol className="divide-y divide-rule">
           {advice.map((a, i) => (
-            <li key={a.key} className="flex gap-2.5 px-3 py-2.5">
+            <li
+              key={a.key}
+              role="button"
+              tabIndex={0}
+              onClick={() => setProfile(a.ffc_id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setProfile(a.ffc_id);
+                }
+              }}
+              title="Career, ADP and the latest on him"
+              className="flex cursor-pointer gap-2.5 px-3 py-2.5 hover:bg-raised focus-visible:bg-raised focus-visible:outline-none"
+            >
               <span className="tnum w-4 pt-0.5 text-xs font-semibold text-ink-3">
                 {i + 1}
               </span>
@@ -60,14 +73,9 @@ export function AdvicePanel({
                 <div className="flex items-center gap-2">
                   <PositionBadge position={a.position} />
                   <SlotMark slot={a.slot} />
-                  <button
-                    type="button"
-                    onClick={() => setProfile(a.ffc_id)}
-                    title="Career, ADP and the latest on him"
-                    className="min-w-0 flex-1 truncate text-left text-sm font-medium hover:underline"
-                  >
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
                     {a.name}
-                  </button>
+                  </span>
                   <span className="tnum text-xs text-ink-3">
                     {a.team}
                     {a.bye_week !== null && ` · bye ${a.bye_week}`}
@@ -92,7 +100,10 @@ export function AdvicePanel({
                     <button
                       type="button"
                       disabled={!canDraft}
-                      onClick={() => onDraft(a)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDraft(a);
+                      }}
                       className="ml-auto rounded bg-accent px-2 py-0.5 text-[11px] font-semibold text-ground disabled:cursor-not-allowed disabled:opacity-35"
                     >
                       Draft

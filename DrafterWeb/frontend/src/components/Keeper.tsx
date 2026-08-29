@@ -159,25 +159,24 @@ function Row({
 }) {
   return (
     <li
+      role={option.ffc_id ? "button" : undefined}
+      tabIndex={option.ffc_id ? 0 : undefined}
+      onClick={option.ffc_id ? () => onOpen(option.ffc_id) : undefined}
+      onKeyDown={(e) => {
+        if (option.ffc_id && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onOpen(option.ffc_id);
+        }
+      }}
+      title={option.ffc_id ? "Career, ADP and the latest on him" : undefined}
       className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${
-        selected ? "border-accent bg-accent-soft" : "border-rule bg-surface"
-      }`}
+        option.ffc_id ? "cursor-pointer hover:border-ink-3" : ""
+      } ${selected ? "border-accent bg-accent-soft" : "border-rule bg-surface"}`}
     >
       <PositionBadge position={option.position as never} />
 
       <div className="min-w-0 flex-1">
-        {option.ffc_id ? (
-          <button
-            type="button"
-            onClick={() => onOpen(option.ffc_id)}
-            title="Career, ADP and the latest on him"
-            className="block max-w-full truncate text-left text-sm font-medium hover:underline"
-          >
-            {option.name}
-          </button>
-        ) : (
-          <div className="truncate text-sm font-medium">{option.name}</div>
-        )}
+        <div className="truncate text-sm font-medium">{option.name}</div>
         <div className="text-xs text-ink-3">
           {option.team}
           {option.bye_week !== null && ` · bye ${option.bye_week}`}
@@ -187,7 +186,13 @@ function Row({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      {/* The row opens a profile, so the control beside the price stops the
+          bubble -- keeping a player and reading about him are different acts. */}
+      <div
+        className="flex items-center gap-2"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
         <span className="text-right">
           <span className="tnum block text-sm font-semibold">
             Round {option.round}

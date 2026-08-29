@@ -303,21 +303,27 @@ function Market({
   }
 
   return (
-    <li className="flex flex-col gap-3 rounded-lg border border-rule bg-surface p-4">
+    <li
+      // Only a market about a particular player has anybody to open, so only
+      // those become a target. Every button inside stops the bubble: buying a
+      // contract and reading about him must never be the same click.
+      role={market.ffc_id ? "button" : undefined}
+      tabIndex={market.ffc_id ? 0 : undefined}
+      onClick={market.ffc_id ? () => setProfile(market.ffc_id) : undefined}
+      onKeyDown={(e) => {
+        if (market.ffc_id && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          setProfile(market.ffc_id);
+        }
+      }}
+      title={market.ffc_id ? "Career, ADP and the latest on him" : undefined}
+      className={`flex flex-col gap-3 rounded-lg border border-rule bg-surface p-4 ${
+        market.ffc_id ? "cursor-pointer hover:border-ink-3" : ""
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
         {/* Only a market about a particular player has anyone to open. */}
-        {market.ffc_id ? (
-          <button
-            type="button"
-            onClick={() => setProfile(market.ffc_id)}
-            title="Career, ADP and the latest on him"
-            className="text-left text-sm font-medium hover:underline"
-          >
-            {market.question}
-          </button>
-        ) : (
-          <p className="text-sm font-medium">{market.question}</p>
-        )}
+        <p className="text-sm font-medium">{market.question}</p>
         <Outcome market={market} />
       </div>
 
@@ -328,7 +334,14 @@ function Market({
         {market.phase === "open" && <span>until {when(market.closes_at)}</span>}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Every control lives in here, and the row below the question opens a
+          profile -- so the bubble stops once, at the boundary, rather than on
+          each button and again on the next one somebody adds. */}
+      <div
+        className="flex flex-wrap items-center gap-2"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
         <Side
           label="Yes"
           price={market.price_yes}
