@@ -42,6 +42,46 @@ COLUMNS = {
 }
 DEFAULT_COLUMNS = ["gp", "pts_ppr"]
 
+# How much a status matters, and what it actually means. Sleeper populates
+# these on 719 players, so availability is structured data rather than
+# something to guess at from the wording of a headline.
+#
+# `Sus` is a suspension and `NA` is not-active -- neither is an injury, and
+# calling them one would put a knee brace next to a man who is merely banned.
+AVAILABILITY = {
+    "IR":           ("out", "on injured reserve"),
+    "PUP":          ("out", "on the physically-unable-to-perform list"),
+    "Out":          ("out", "out"),
+    "DNR":          ("out", "did not report"),
+    "Doubtful":     ("doubtful", "doubtful"),
+    "Questionable": ("questionable", "questionable"),
+    "Sus":          ("suspended", "suspended"),
+    "COV":          ("other", "on the COVID list"),
+    "NA":           ("other", "not active"),
+}
+
+
+def availability(entry: dict) -> dict | None:
+    """Whether he is expected to play, and why not.
+
+    Separate from the news because it is a different kind of fact: a status
+    from the league rather than somebody's paragraph about him. Grouping them
+    left an injury note ranked against an article about his workload.
+    """
+    status = (entry or {}).get("injury_status")
+    if not status:
+        return None
+
+    severity, phrase = AVAILABILITY.get(status, ("other", status.lower()))
+    return {
+        "status": status,
+        "severity": severity,
+        "phrase": phrase,
+        "injury": severity not in ("suspended", "other"),
+        "body_part": entry.get("injury_body_part") or None,
+        "notes": (entry.get("injury_notes") or "").strip() or None,
+    }
+
 
 def get_pool() -> PlayerPool:
     from ..main import require_pool
@@ -173,9 +213,10 @@ def profile(
             "height": entry.get("height"),
             "weight": entry.get("weight"),
             "depth_chart_order": entry.get("depth_chart_order"),
-            "injury_status": entry.get("injury_status"),
             "status": entry.get("status"),
         } if entry else None,
+        # Its own field, not a line in the biography.
+        "availability": availability(entry),
         "career": {"columns": columns, "seasons": rows},
         "notes": [n.as_dict() for n in (note.notes if note else ())][:3],
         # Which halves came back, so the page can say so rather than showing
@@ -184,6 +225,7 @@ def profile(
             "career": bool(rows),
             "bio": bool(entry),
             "notes": bool(note and note.notes),
+            "availability": availability(entry) is not None,
         },
         "season": app_config.SEASON,
     }

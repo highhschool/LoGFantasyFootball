@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -42,6 +42,8 @@ class Note:
     body: str
     updated: str
     priority: int
+    #: `updated` as a sortable date, or None when it could not be read.
+    on: "date | None" = None
 
     def as_dict(self) -> dict:
         return {
@@ -49,7 +51,18 @@ class Note:
             "body": self.body,
             "updated": self.updated,
             "priority": self.priority,
+            "on": self.on.isoformat() if self.on else None,
         }
+
+
+def _when(raw: str) -> "date | None":
+    """FFC dates its pieces `8/26/2026`. Anything else is left unsorted."""
+    for shape in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y"):
+        try:
+            return datetime.strptime(raw.strip(), shape).date()
+        except ValueError:
+            continue
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,15 +98,20 @@ def parse(payload: object, ffc_id: int) -> PlayerNote:
     for item in (row.get("news") or []):
         if not headshot and item.get("player_image"):
             headshot = item["player_image"]
+        updated = (item.get("updated_at") or "").strip()
         notes.append(Note(
             title=(item.get("title") or "").strip(),
             body=(item.get("analysis") or item.get("content") or "").strip(),
-            updated=(item.get("updated_at") or "").strip(),
+            updated=updated,
             priority=int(item.get("priority") or 0),
+            on=_when(updated),
         ))
 
-    # Loudest first, since a profile shows one or two of them.
-    notes.sort(key=lambda n: -n.priority)
+    # Newest first, and priority only settles a tie. Sorting on priority alone
+    # put a loud piece from August above a quiet one from this morning, which
+    # on draft day is exactly backwards -- what changed today is the news.
+    # Anything undated sorts last rather than to the top.
+    notes.sort(key=lambda n: (n.on or date.min, n.priority), reverse=True)
 
     return PlayerNote(
         ffc_id=ffc_id,

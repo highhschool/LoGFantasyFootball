@@ -62,6 +62,7 @@ export function PlayerProfile({
       {data && (
         <div className="flex flex-col gap-5">
           <Header data={data} />
+          {data.availability && <Availability data={data} />}
           <Draft data={data} />
           {data.have.career ? <Career data={data} /> : <Missing what="career" />}
           {data.have.notes && <Notes data={data} />}
@@ -107,11 +108,35 @@ function Header({ data }: { data: Profile }) {
               .join(" · ")}
           </p>
         )}
-        {bio?.injury_status && (
-          <p className="mt-1 text-sm font-medium text-warn">{bio.injury_status}</p>
-        )}
+
       </div>
     </div>
+  );
+}
+
+/** How loudly a status is drawn. Out is not the same news as questionable. */
+const TONE = {
+  out: "border-danger/50 bg-danger/10 text-danger",
+  doubtful: "border-danger/40 bg-danger/5 text-danger",
+  questionable: "border-warn/40 bg-warn-soft text-warn",
+  suspended: "border-warn/40 bg-warn-soft text-warn",
+  other: "border-rule bg-ground text-ink-2",
+} as const;
+
+function Availability({ data }: { data: Profile }) {
+  const a = data.availability!;
+  return (
+    <section className={`rounded-lg border px-4 py-3 ${TONE[a.severity]}`}>
+      <p className="text-sm">
+        <strong className="font-semibold">{a.status}</strong>
+        {" — "}
+        {a.phrase}
+        {/* A suspension is not an injury, so it does not get a body part
+            appended to it as though it were. */}
+        {a.injury && a.body_part && <> ({a.body_part.toLowerCase()})</>}
+        {a.notes && <>. {a.notes}</>}
+      </p>
+    </section>
   );
 }
 

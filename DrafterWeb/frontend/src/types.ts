@@ -398,15 +398,31 @@ export interface PlayerProfile {
     height: string | null;
     weight: string | null;
     depth_chart_order: number | null;
-    injury_status: string | null;
     status: string | null;
+  } | null;
+  /** Whether he is expected to play, and why not. Its own fact, not news. */
+  availability: {
+    status: string;
+    severity: "out" | "doubtful" | "questionable" | "suspended" | "other";
+    phrase: string;
+    /** False for a suspension, which is not an injury. */
+    injury: boolean;
+    body_part: string | null;
+    notes: string | null;
   } | null;
   career: {
     columns: string[];
     seasons: Record<string, number | null>[];
   };
-  notes: { title: string; body: string; updated: string; priority: number }[];
+  notes: {
+    title: string;
+    body: string;
+    updated: string;
+    priority: number;
+    /** The date, sortable, or null when it could not be read. */
+    on: string | null;
+  }[];
   /** Which halves came back. Each source can fail on its own. */
-  have: { career: boolean; bio: boolean; notes: boolean };
+  have: { career: boolean; bio: boolean; notes: boolean; availability: boolean };
   season: number;
 }
