@@ -237,7 +237,7 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
           Widened it sits full width above both columns, so the player list and
           roster stay side by side underneath rather than stacking. */}
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 lg:overflow-hidden">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             disabled={locked}
@@ -277,6 +277,14 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
             running={pacing}
             onSkip={skipAhead}
           />
+          {/* Two settings that read as one row otherwise: what the bots do,
+              and what the layout does. Hidden where the bar wraps, since a
+              vertical rule at the end of a line separates nothing. */}
+          <span
+            aria-hidden
+            className="hidden h-5 w-px shrink-0 bg-rule sm:block"
+          />
+
           <button
             type="button"
             onClick={() => {
