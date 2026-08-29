@@ -167,6 +167,11 @@ ADDED_COLUMNS = {
     "source_id": "TEXT NOT NULL DEFAULT ''",
     "randomness": "REAL NOT NULL DEFAULT 1.0",
     "pick_seconds": "INTEGER NOT NULL DEFAULT 0",
+    # When the owner binned it. Their delete hides the session from them and
+    # leaves the row, because the owner's view and the league's record are
+    # different things -- a hard delete let anybody quietly erase a draft from
+    # the one place that was supposed to see all of them.
+    "deleted_at": "TEXT",
 }
 
 ADDED_SLATE_COLUMNS = {
@@ -276,10 +281,15 @@ class SessionStore:
         return session_id
 
     def load(self, session_id: str, owner_id: str) -> dict | None:
-        """Scoped to the owner: someone else's session reads as absent."""
+        """Scoped to the owner: someone else's session reads as absent.
+
+        So is one they deleted. The row survives for the admin view, but to
+        its owner a binned draft is gone.
+        """
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM sessions WHERE id = ? AND owner_id = ?",
+                "SELECT * FROM sessions WHERE id = ? AND owner_id = ?"
+                " AND deleted_at IS NULL",
                 (session_id, owner_id),
             ).fetchone()
         return None if row is None else self._row_to_session(row)
@@ -335,7 +345,7 @@ class SessionStore:
         """
         sql = (
             "SELECT id, name, mode, created_at, updated_at, log_json"
-            " FROM sessions WHERE owner_id = ?"
+            " FROM sessions WHERE owner_id = ? AND deleted_at IS NULL"
         )
         params: list[object] = [owner_id]
         if mode is not None:
@@ -552,6 +562,7 @@ class SessionStore:
         """
         sql = (
             "SELECT id, name, mode, owner_id, source_id, created_at, updated_at,"
+            " deleted_at,"
             " log_json, config_json FROM sessions"
         )
         params: list[object] = []
@@ -586,6 +597,10 @@ class SessionStore:
                 "complete": picks + len(config.keepers) >= config.teams * config.rounds,
                 "created_at": r["created_at"],
                 "updated_at": r["updated_at"],
+                # Binned by its owner but kept here, which is the difference
+                # between their view and the league's record.
+                "deleted": r["deleted_at"] is not None,
+                "deleted_at": r["deleted_at"],
             })
         return out
 
@@ -613,11 +628,29 @@ class SessionStore:
         return None if row is None else self._row_to_session(row)
 
     def delete(self, session_id: str, owner_id: str) -> bool:
+        """Bin a session, from its owner's point of view.
+
+        The row stays. It vanishes from their list and refuses to load for
+        them, which is everything a delete means to the person doing it --
+        and the league's record of what was drafted survives, which is the
+        whole point of having one.
+        """
         with self._connect() as conn:
             cur = conn.execute(
-                "DELETE FROM sessions WHERE id = ? AND owner_id = ?",
-                (session_id, owner_id),
+                "UPDATE sessions SET deleted_at = ? WHERE id = ? AND owner_id = ?"
+                " AND deleted_at IS NULL",
+                (_now(), session_id, owner_id),
             )
+            return cur.rowcount > 0
+
+    def purge(self, session_id: str) -> bool:
+        """Actually remove a session. Admin only, and the only route that does.
+
+        Every other delete in this app hides or refuses. This one is real, so
+        it exists in exactly one place and is reached from exactly one screen.
+        """
+        with self._connect() as conn:
+            cur = conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             return cur.rowcount > 0
 
     # ----------------------------------------------------------- contracts

@@ -1,8 +1,14 @@
 """The owner's view across every session.
 
-Read-only, deliberately. Seeing what the league has been drafting is one
-thing; being able to delete somebody's draft from a browser is a much larger
-blast radius for the same gate.
+Almost entirely read-only. Seeing what the league has been drafting is one
+thing; deleting somebody's draft from a browser is a much larger blast radius
+for the same gate, so exactly two routes here change anything -- the keeper
+sync and the session purge -- and both are named in a test that fails if a
+third appears.
+
+The purge exists because the alternative was worse. A user's delete used to
+drop the row, which meant anybody could quietly erase a draft from the one
+view meant to see all of them. Now their delete hides and this one removes.
 
 Guarded by Cloudflare Access -- see app/admin.py, and note that the Access
 application has to cover `/api/admin` as well as `/admin`, or the page is
@@ -122,6 +128,34 @@ def one_session(
             for slot, team in state.teams.items()
         },
     }
+
+
+@router.delete("/sessions/{session_id}")
+def purge_session(
+    session_id: str,
+    request: Request,
+    store: SessionStore = Depends(get_store),
+) -> dict:
+    """Remove a session for good.
+
+    The only route in this app that truly destroys anything, and it exists
+    because the alternative was worse: a hard delete on the owner's side, so
+    anybody could quietly erase a draft from the one view meant to see all of
+    them. Their delete hides; this one removes, and it is reachable from one
+    screen behind one gate.
+
+    There is no undo. A session is its config and its log, so what goes is a
+    board somebody drafted -- which is why the button asks first.
+    """
+    require_admin(request)
+
+    session = store.load_any(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="no such session")
+    if not store.purge(session_id):
+        raise HTTPException(status_code=404, detail="no such session")
+
+    return {"purged": session_id, "name": session["name"]}
 
 
 @router.get("/keepers")

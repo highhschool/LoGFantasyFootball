@@ -278,11 +278,14 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
             onSkip={skipAhead}
           />
           {/* Two settings that read as one row otherwise: what the bots do,
-              and what the layout does. Hidden where the bar wraps, since a
-              vertical rule at the end of a line separates nothing. */}
+              and what the layout does. The margin is on top of the row's own
+              gap, so the space either side of the rule is wider than the space
+              between the buttons it is separating -- without that it reads as
+              one more control rather than a break. Hidden where the bar wraps,
+              since a vertical rule at the end of a line separates nothing. */}
           <span
             aria-hidden
-            className="hidden h-5 w-px shrink-0 bg-rule sm:block"
+            className="hidden h-5 w-px shrink-0 bg-rule sm:mx-2 sm:block"
           />
 
           <button

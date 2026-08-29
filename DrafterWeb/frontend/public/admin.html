@@ -105,6 +105,19 @@
   body.show-codes .codes-col { display: table-cell; }
   code { font-family: ui-monospace, Consolas, monospace; letter-spacing: 0.08em; }
   .pending { color: var(--ink-3); font-style: italic; }
+
+  /* A session its owner threw away. Struck through rather than hidden or
+     greyed out: it is still a real draft and still readable, it just is not
+     in anyone's list any more. */
+  tr.binned td:not(:last-child) { opacity: 0.55; }
+  tr.binned .name { text-decoration: line-through; }
+  .tag {
+    margin-left: 0.4rem; padding: 0.05rem 0.35rem; border-radius: 999px;
+    border: 1px solid var(--rule); font-size: 0.7rem; color: var(--ink-3);
+    text-transform: uppercase; letter-spacing: 0.05em; vertical-align: 1px;
+  }
+  button.danger { color: var(--danger); border-color: var(--danger); }
+  button.danger[aria-pressed="true"] { background: var(--danger); color: var(--ground); }
   .pill {
     display: inline-block; padding: 0.1rem 0.45rem; border-radius: 999px;
     font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em;
@@ -152,6 +165,11 @@
         <select id="f-owner" aria-label="Owner">
           <option value="">Any owner</option>
         </select>
+        <select id="f-binned" aria-label="Binned">
+          <option value="">Live and binned</option>
+          <option value="live">Live only</option>
+          <option value="binned">Binned only</option>
+        </select>
         <button id="reset">Clear</button>
       </div>
 
@@ -162,10 +180,10 @@
               <th data-sort="name">Name</th><th>Tool</th><th data-sort="owner">Owner</th>
               <th class="num" data-sort="picks_made">Picks</th><th class="num">Teams</th>
               <th class="num">Slot</th><th class="num">Keepers</th>
-              <th data-sort="updated_at" data-dir="desc">Updated</th><th></th>
+              <th data-sort="updated_at" data-dir="desc">Updated</th><th></th><th></th>
             </tr>
           </thead>
-          <tbody id="rows"><tr><td colspan="9" class="muted">Loading…</td></tr></tbody>
+          <tbody id="rows"><tr><td colspan="10" class="muted">Loading…</td></tr></tbody>
         </table>
       </div>
 
@@ -283,6 +301,7 @@
   let mode = "";
   let shown = PAGE;
   let sort = { key: "updated_at", dir: "desc" };
+  let openId = null;
 
   const fmt = (iso) => {
     try { return new Date(iso).toLocaleString(); } catch { return iso; }
@@ -299,10 +318,13 @@
     const q = document.getElementById("q").value.trim().toLowerCase();
     const status = document.getElementById("f-status").value;
     const owner = document.getElementById("f-owner").value;
+    const binned = document.getElementById("f-binned").value;
 
     let out = all.filter((s) => {
       if (mode && s.mode !== mode) return false;
       if (owner && s.owner !== owner) return false;
+      if (binned === "live" && s.deleted) return false;
+      if (binned === "binned" && !s.deleted) return false;
       if (status && progress(s) !== status) return false;
       if (q && !`${s.name} ${s.owner} ${s.id}`.toLowerCase().includes(q)) return false;
       return true;
@@ -333,15 +355,17 @@
       ` (${matches.length - page.length} hidden)`;
 
     if (!page.length) {
-      rows.innerHTML = `<tr><td colspan="9" class="muted">${
+      rows.innerHTML = `<tr><td colspan="10" class="muted">${
         all.length ? "Nothing matches those filters." : "Nothing yet."
       }</td></tr>`;
       return;
     }
 
     rows.innerHTML = page.map((s) => `
-      <tr>
-        <td>${escape(s.name || s.id)}</td>
+      <tr class="${s.deleted ? "binned" : ""}">
+        <td><span class="name">${escape(s.name || s.id)}</span>${
+          s.deleted ? `<span class="tag" title="Binned by its owner ${escape(fmt(s.deleted_at))}">binned</span>` : ""
+        }</td>
         <td class="muted">${s.mode === "mock" ? "mock" : "live"}</td>
         <td class="muted">${escape(s.owner)}</td>
         <td class="num">${s.picks_made}</td>
@@ -350,6 +374,9 @@
         <td class="num">${s.keepers || ""}</td>
         <td class="muted">${fmt(s.updated_at)}</td>
         <td><button data-open="${s.id}">Board</button></td>
+        <td><button class="danger" data-purge="${s.id}" data-name="${
+          escape(s.name || s.id)
+        }">Delete</button></td>
       </tr>`).join("");
   }
 
@@ -375,11 +402,37 @@
 
       render();
     } catch (e) {
-      rows.innerHTML = `<tr><td colspan="9" class="err">Could not load: ${escape(String(e))}</td></tr>`;
+      rows.innerHTML = `<tr><td colspan="10" class="err">Could not load: ${escape(String(e))}</td></tr>`;
+    }
+  }
+
+  // The only destructive control on this page, and the only one anywhere
+  // that actually removes a draft. It asks by name, because "Delete" in a row
+  // of fifty is easy to hit and there is nothing behind it.
+  async function purge(id, name) {
+    if (!confirm(
+      `Delete "${name}" for good?
+
+` +
+      `This removes the session and its picks from the database. It cannot ` +
+      `be undone, and the owner cannot get it back either.`
+    )) return;
+
+    try {
+      const res = await fetch(`/api/admin/sessions/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Drop it here rather than refetching, so the page does not jump and a
+      // long listing does not reload for one row.
+      all = all.filter((s) => s.id !== id);
+      if (openId === id) document.getElementById("detail").innerHTML = "";
+      render();
+    } catch (e) {
+      alert(`Could not delete: ${e}`);
     }
   }
 
   async function openBoard(id) {
+    openId = id;
     const target = document.getElementById("detail");
     target.innerHTML = '<p class="muted">Loading board…</p>';
     try {
@@ -431,6 +484,7 @@
   document.getElementById("q").addEventListener("input", refilter);
   document.getElementById("f-status").addEventListener("change", refilter);
   document.getElementById("f-owner").addEventListener("change", refilter);
+  document.getElementById("f-binned").addEventListener("change", refilter);
 
   document.getElementById("more").addEventListener("click", () => {
     shown += PAGE;
@@ -441,6 +495,7 @@
     document.getElementById("q").value = "";
     document.getElementById("f-status").value = "";
     document.getElementById("f-owner").value = "";
+    document.getElementById("f-binned").value = "";
     mode = "";
     document.querySelectorAll("[data-mode]").forEach((b) =>
       b.setAttribute("aria-pressed", String(b.dataset.mode === "")));
@@ -483,12 +538,18 @@
     }
     const open = e.target.closest("[data-open]");
     if (open) openBoard(open.dataset.open);
+
+    const bin = e.target.closest("[data-purge]");
+    if (bin) purge(bin.dataset.purge, bin.dataset.name);
   });
 
   fetch("/api/admin/whoami")
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
     .then((d) => {
-      document.getElementById("who").textContent = `Signed in as ${d.admin}. Read-only.`;
+      // It was read-only until this page grew a delete, and saying otherwise
+      // is how somebody clicks one expecting nothing to happen.
+      document.getElementById("who").textContent =
+        `Signed in as ${d.admin}. Deleting a session here is permanent.`;
     })
     .catch(() => {
       document.getElementById("who").innerHTML =

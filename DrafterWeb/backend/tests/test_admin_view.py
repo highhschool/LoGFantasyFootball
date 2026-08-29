@@ -188,31 +188,66 @@ class TestTheListingReportsItsOwnLimit:
             assert field in row, field
 
 
-class TestItDestroysNothing:
+class TestWhatItIsAllowedToDestroy:
     """Viewing is one thing; deleting someone's draft is a larger blast radius.
 
-    This invariant has been narrowed twice by real changes. First it read "no
-    route changes anything", which the keeper sync broke by being a POST. Then
-    it read "nothing here destroys what anyone made", which sync broke again by
-    dropping managers who left the league -- deliberately, since their code and
-    their selection have to go with them. What survives is the part that was
-    always the point: the sync mirrors the league roster and touches nothing
-    else, and no drafted session can be deleted or rewritten from here.
+    This has been narrowed three times by real changes, and the wording kept
+    overreaching. It began as "no route changes anything", which the keeper
+    sync broke by being a POST. Then "nothing here destroys what anyone made",
+    which sync broke again by dropping managers who left the league. Now a
+    session can be purged outright -- deliberately, because the alternative
+    was worse: the owner's delete used to remove the row, so anybody could
+    quietly erase a draft from the one view meant to see all of them.
+
+    So the invariant is no longer about destroying nothing. It is that the
+    destructive surface is small, named, and changes only on purpose. Adding a
+    route that removes something breaks the list below, which is the point.
     """
 
-    def test_nothing_deletes_or_replaces(self):
+    #: Every route behind this gate that removes or rewrites anything.
+    DESTRUCTIVE = {
+        ("DELETE", "/api/admin/sessions/{session_id}"),
+        ("POST", "/api/admin/keepers/sync"),
+    }
+
+    def test_the_destructive_routes_are_exactly_these(self):
+        """A new one has to be added here, which is the review moment."""
         from app.api.admin import router
 
-        for route in router.routes:
-            assert not route.methods & {"DELETE", "PUT", "PATCH"}, route.path
-
-    def test_the_only_write_is_the_league_sync(self):
-        from app.api.admin import router
-
-        writes = {
-            route.path for route in router.routes if route.methods - {"GET", "HEAD"}
+        found = {
+            (method, route.path)
+            for route in router.routes
+            for method in (route.methods - {"GET", "HEAD", "OPTIONS"})
         }
-        assert writes == {"/api/admin/keepers/sync"}
+        assert found == self.DESTRUCTIVE
+
+    def test_everything_else_only_reads(self):
+        from app.api.admin import router
+
+        reading = [
+            route.path for route in router.routes
+            if not (route.methods - {"GET", "HEAD", "OPTIONS"})
+        ]
+        assert len(reading) >= 4, "the panel is mostly a view, and should stay one"
+
+    def test_a_purge_needs_the_gate(self, shared_app):
+        with TestClient(shared_app) as maker:
+            session = make_session(maker, name="not yours to bin")
+
+        with TestClient(shared_app) as stranger:
+            assert stranger.delete(
+                f"/api/admin/sessions/{session['id']}"
+            ).status_code == 404
+
+        with TestClient(shared_app) as admin:
+            assert admin.get(
+                f"/api/admin/sessions/{session['id']}", headers=ADMIN
+            ).status_code == 200, "still there"
+
+    def test_purging_something_that_is_gone_is_a_404(self, client):
+        assert client.delete(
+            "/api/admin/sessions/nope", headers=ADMIN
+        ).status_code == 404
 
     def test_that_sync_is_idempotent(self, client, monkeypatch):
         """It mints codes for new managers and leaves existing ones alone."""
@@ -281,3 +316,104 @@ class TestThePage:
         /api/admin, which is gated regardless.
         """
         assert client.get("/admin").status_code in (200, 404)
+
+
+class TestTheTwoDeletes:
+    """A user binning a mock draft and the league losing it are different acts.
+
+    They used to be the same one. The owner's delete dropped the row, so the
+    admin table -- the only place meant to see every session -- quietly lost
+    drafts, and nobody could tell a deleted session from one that never
+    existed. Now the owner's delete hides and the admin's delete removes.
+    """
+
+    def test_a_binned_session_is_gone_for_its_owner(self, shared_app):
+        with TestClient(shared_app) as owner:
+            session = make_session(owner, name="mine")
+            assert owner.delete(f"/api/sessions/{session['id']}").status_code == 200
+
+            assert owner.get(f"/api/sessions/{session['id']}").status_code == 404
+            listed = owner.get("/api/sessions").json()["sessions"]
+            assert session["id"] not in {s["id"] for s in listed}
+
+    def test_but_the_admin_still_sees_it(self, shared_app):
+        with TestClient(shared_app) as owner:
+            session = make_session(owner, name="binned but drafted")
+            owner.delete(f"/api/sessions/{session['id']}")
+
+        with TestClient(shared_app) as admin:
+            listing = admin.get("/api/admin/sessions", headers=ADMIN).json()
+            row = next(s for s in listing["sessions"] if s["id"] == session["id"])
+            assert row["deleted"] is True, "and it says so"
+            assert row["deleted_at"]
+            assert row["name"] == "binned but drafted"
+
+            board = admin.get(
+                f"/api/admin/sessions/{session['id']}", headers=ADMIN
+            )
+            assert board.status_code == 200, "the board is still readable"
+
+    def test_a_live_session_is_not_marked_deleted(self, client):
+        session = make_session(client, name="still here")
+        listing = client.get("/api/admin/sessions", headers=ADMIN).json()
+        row = next(s for s in listing["sessions"] if s["id"] == session["id"])
+        assert row["deleted"] is False
+        assert row["deleted_at"] is None
+
+    def test_binning_twice_is_not_an_error_the_second_time(self, client):
+        """The row is already hidden; there is nothing left to hide."""
+        session = make_session(client)
+        assert client.delete(f"/api/sessions/{session['id']}").status_code == 200
+        assert client.delete(f"/api/sessions/{session['id']}").status_code == 404
+
+    def test_the_count_includes_binned_sessions(self, shared_app):
+        """Otherwise the total disagrees with the rows underneath it."""
+        with TestClient(shared_app) as owner:
+            a = make_session(owner, name="a")
+            make_session(owner, name="b")
+            owner.delete(f"/api/sessions/{a['id']}")
+
+        with TestClient(shared_app) as admin:
+            listing = admin.get("/api/admin/sessions", headers=ADMIN).json()
+            assert listing["total"] == len(listing["sessions"])
+            assert any(s["deleted"] for s in listing["sessions"])
+
+    def test_the_admin_delete_is_the_one_that_removes_it(self, shared_app):
+        with TestClient(shared_app) as owner:
+            session = make_session(owner, name="for good")
+
+        with TestClient(shared_app) as admin:
+            gone = admin.delete(
+                f"/api/admin/sessions/{session['id']}", headers=ADMIN
+            )
+            assert gone.status_code == 200
+            assert gone.json()["name"] == "for good"
+
+            listing = admin.get("/api/admin/sessions", headers=ADMIN).json()
+            assert session["id"] not in {s["id"] for s in listing["sessions"]}
+            assert admin.get(
+                f"/api/admin/sessions/{session['id']}", headers=ADMIN
+            ).status_code == 404
+
+    def test_it_can_purge_one_the_owner_already_binned(self, shared_app):
+        """Which is the usual case: clearing out what people have thrown away."""
+        with TestClient(shared_app) as owner:
+            session = make_session(owner, name="twice dead")
+            owner.delete(f"/api/sessions/{session['id']}")
+
+        with TestClient(shared_app) as admin:
+            assert admin.delete(
+                f"/api/admin/sessions/{session['id']}", headers=ADMIN
+            ).status_code == 200
+            listing = admin.get("/api/admin/sessions", headers=ADMIN).json()
+            assert session["id"] not in {s["id"] for s in listing["sessions"]}
+
+    def test_purging_one_leaves_the_others(self, shared_app):
+        with TestClient(shared_app) as owner:
+            doomed = make_session(owner, name="doomed")
+            spared = make_session(owner, name="spared")
+
+        with TestClient(shared_app) as admin:
+            admin.delete(f"/api/admin/sessions/{doomed['id']}", headers=ADMIN)
+            listing = admin.get("/api/admin/sessions", headers=ADMIN).json()
+            assert spared["id"] in {s["id"] for s in listing["sessions"]}
