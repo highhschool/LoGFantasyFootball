@@ -13,6 +13,7 @@ import type {
   LiveDraft,
   NewSession,
   Player,
+  PlayerProfile,
   Profile,
   SessionPatch,
   SessionSummary,
@@ -232,6 +233,19 @@ export const contracts = {
     }),
 
   me: () => request<ContractBook>("/api/contracts/me"),
+};
+
+/** One player, from every angle the app has one. */
+export const players = {
+  profile: (ffcId: number, opts: { seasons?: number; atPick?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.seasons) q.set("seasons", String(opts.seasons));
+    if (opts.atPick) q.set("at_pick", String(opts.atPick));
+    const query = q.toString();
+    return request<PlayerProfile>(
+      `/api/players/${ffcId}/profile${query ? `?${query}` : ""}`,
+    );
+  },
 };
 
 /** Identity. Not the keeper tool's, though that is where the codes came from. */

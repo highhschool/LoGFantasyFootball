@@ -269,6 +269,13 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
               onSearch={setSearch}
               onPosition={setPosition}
               onDraft={(p) => act(() => api.pick(session.id, p.key))}
+              // Where your next turn lands, so a profile can say whether he
+              // survives to it rather than quoting a probability of nothing.
+              atPick={
+                session.on_the_clock && session.picks_until_your_next !== null
+                  ? session.on_the_clock.overall + session.picks_until_your_next
+                  : undefined
+              }
               style={showBoard && !wideBoard ? { flexGrow: listGrow } : undefined}
               className={
                 showBoard && !wideBoard

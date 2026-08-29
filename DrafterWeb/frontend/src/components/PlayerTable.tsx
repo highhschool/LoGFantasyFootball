@@ -1,4 +1,6 @@
+import { useState } from "react";
 import type { Player, Position } from "../types";
+import { PlayerProfile } from "./PlayerProfile";
 import { PositionBadge } from "./PositionBadge";
 
 const POSITIONS: Position[] = ["QB", "RB", "WR", "TE", "K", "DST"];
@@ -12,6 +14,8 @@ interface Props {
   onSearch: (value: string) => void;
   onPosition: (value: string) => void;
   onDraft: (player: Player) => void;
+  /** Your next pick, so a profile can say whether he lasts to it. */
+  atPick?: number;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -25,9 +29,12 @@ export function PlayerTable({
   onSearch,
   onPosition,
   onDraft,
+  atPick,
   className = "",
   style,
 }: Props) {
+  const [profile, setProfile] = useState<number | null>(null);
+
   return (
     <section
       style={style}
@@ -72,7 +79,14 @@ export function PlayerTable({
               <PositionBadge position={player.position} />
 
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{player.name}</div>
+                <button
+                  type="button"
+                  onClick={() => setProfile(player.ffc_id)}
+                  title="Career, ADP and the latest on him"
+                  className="block max-w-full truncate text-left text-sm font-medium hover:underline"
+                >
+                  {player.name}
+                </button>
                 <div className="text-xs text-ink-3">
                   {player.team}
                   {player.bye_week !== null && <> · bye {player.bye_week}</>}
@@ -99,6 +113,14 @@ export function PlayerTable({
           ))}
         </ul>
       </div>
+
+      {profile !== null && (
+        <PlayerProfile
+          ffcId={profile}
+          atPick={atPick}
+          onClose={() => setProfile(null)}
+        />
+      )}
     </section>
   );
 }

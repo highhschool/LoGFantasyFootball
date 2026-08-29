@@ -2,6 +2,8 @@ export type Position = "QB" | "RB" | "WR" | "TE" | "K" | "DST";
 
 export interface Player {
   key: string;
+  /** Fantasy Football Calculator's id, which the profile route is keyed on. */
+  ffc_id: number;
   name: string;
   position: Position;
   team: string;
@@ -196,6 +198,8 @@ export interface KeeperManager {
 
 export interface KeeperOption {
   key: string;
+  /** Zero for a player this year's board does not rank. */
+  ffc_id: number;
   sleeper_id: string;
   name: string;
   position: string;
@@ -351,4 +355,52 @@ export interface Profile {
   /** Sleeper's avatar, the free default. */
   avatar_url: string | null;
   custom: boolean;
+}
+
+// --------------------------------------------------------------- profiles
+
+export interface PlayerProfile {
+  player: {
+    ffc_id: number;
+    key: string;
+    name: string;
+    position: Position;
+    team: string;
+    team_full: string;
+    bye_week: number | null;
+    rookie: boolean;
+    headshot: string | null;
+  };
+  adp: {
+    adp: number;
+    round: string;
+    rank: number;
+    pos_rank: number;
+    high: number;
+    low: number;
+    stdev: number;
+    times_drafted: number;
+    /** Percent still available at `at_pick`, when one was asked for. */
+    survives_to: number | null;
+    at_pick: number | null;
+  };
+  bio: {
+    age: number | null;
+    college: string | null;
+    years_exp: number | null;
+    number: string | null;
+    height: string | null;
+    weight: string | null;
+    depth_chart_order: number | null;
+    injury_status: string | null;
+    status: string | null;
+  } | null;
+  career: {
+    columns: string[];
+    seasons: Record<string, number | null>[];
+  };
+  notes: { title: string; body: string; updated: string; priority: number }[];
+  /** Which halves came back. Each source can fail on its own. */
+  have: { career: boolean; bio: boolean; notes: boolean };
+  season: number;
 }

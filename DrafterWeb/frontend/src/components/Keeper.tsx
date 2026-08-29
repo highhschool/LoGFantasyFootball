@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, keeper } from "../api";
 import type { KeeperOption, KeeperState } from "../types";
 import { Countdown } from "./Countdown";
+import { PlayerProfile } from "./PlayerProfile";
 import { PositionBadge } from "./PositionBadge";
 import { SignInDialog } from "./SignInDialog";
 
@@ -23,6 +24,7 @@ export function Keeper({ onBack }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [profile, setProfile] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -122,9 +124,14 @@ export function Keeper({ onBack }: Props) {
             disabled={busy || !state.open}
             season={season}
             onChoose={() => choose(option)}
+            onOpen={setProfile}
           />
         ))}
       </ul>
+
+      {profile !== null && (
+        <PlayerProfile ffcId={profile} onClose={() => setProfile(null)} />
+      )}
 
       <p className="text-xs text-ink-3">
         Keeping a player costs the round his ADP falls in. ADP moves until the
@@ -141,12 +148,14 @@ function Row({
   disabled,
   season,
   onChoose,
+  onOpen,
 }: {
   option: KeeperOption;
   selected: boolean;
   disabled: boolean;
   season: number | string;
   onChoose: () => void;
+  onOpen: (ffcId: number) => void;
 }) {
   return (
     <li
@@ -157,7 +166,18 @@ function Row({
       <PositionBadge position={option.position as never} />
 
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{option.name}</div>
+        {option.ffc_id ? (
+          <button
+            type="button"
+            onClick={() => onOpen(option.ffc_id)}
+            title="Career, ADP and the latest on him"
+            className="block max-w-full truncate text-left text-sm font-medium hover:underline"
+          >
+            {option.name}
+          </button>
+        ) : (
+          <div className="truncate text-sm font-medium">{option.name}</div>
+        )}
         <div className="text-xs text-ink-3">
           {option.team}
           {option.bye_week !== null && ` · bye ${option.bye_week}`}

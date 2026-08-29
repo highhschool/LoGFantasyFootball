@@ -81,6 +81,13 @@ def _sleeper_id(client: SleeperClient, player: Player) -> tuple[str | None, dict
     except Exception:
         return None, {}
 
+    # A defense is keyed by its team, not by a name. Ours reads "Seattle
+    # Defense" and Sleeper's is "Seattle Seahawks", so matching on the name
+    # finds nothing -- which is why `names.player_key` keys them on the team
+    # too, and why this does the same rather than inventing a third rule.
+    if normalize_position(player.position) == "DST":
+        return player.team, directory.get(player.team, {})
+
     wanted = normalize_name(player.name)
     position = normalize_position(player.position)
 

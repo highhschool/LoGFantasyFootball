@@ -60,6 +60,9 @@ class KeeperOption:
     def as_dict(self) -> dict:
         return {
             "key": self.key,
+            # So a row can open a profile. Zero for anyone this year's board
+            # does not rank, who has no profile to open.
+            "ffc_id": self.player.ffc_id if self.player else 0,
             "ranked": self.ranked,
             "sleeper_id": self.sleeper_id,
             "name": self.name,
