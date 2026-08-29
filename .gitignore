@@ -31,3 +31,9 @@ desktop.ini
 .DS_Store
 ~$*
 *.tmp
+
+# DrafterWeb lives in its own repository now (highhschool/ngfl-drafter).
+# It stays in this folder so the running server, its database and the
+# Cloudflare tunnel keep the paths they already had -- but its history and
+# releases belong to that repo, not this one.
+DrafterWeb/

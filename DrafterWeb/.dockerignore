@@ -1,8 +1,0 @@
-**/node_modules
-**/__pycache__
-**/.pytest_cache
-frontend/dist
-backend/app/static
-data
-logs
-.env
