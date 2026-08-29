@@ -1,4 +1,6 @@
+import { useState } from "react";
 import type { Advice } from "../types";
+import { PlayerProfile } from "./PlayerProfile";
 import { PositionBadge } from "./PositionBadge";
 
 interface Props {
@@ -8,9 +10,20 @@ interface Props {
   onDraft?: (advice: Advice) => void;
   canDraft?: boolean;
   yourTurn: boolean;
+  /** Your next pick, so a profile can say whether he survives to it. */
+  atPick?: number;
 }
 
-export function AdvicePanel({ advice, loading, onDraft, canDraft, yourTurn }: Props) {
+export function AdvicePanel({
+  advice,
+  loading,
+  onDraft,
+  canDraft,
+  yourTurn,
+  atPick,
+}: Props) {
+  const [profile, setProfile] = useState<number | null>(null);
+
   if (!loading && advice.length === 0) return null;
 
   return (
@@ -47,9 +60,14 @@ export function AdvicePanel({ advice, loading, onDraft, canDraft, yourTurn }: Pr
                 <div className="flex items-center gap-2">
                   <PositionBadge position={a.position} />
                   <SlotMark slot={a.slot} />
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setProfile(a.ffc_id)}
+                    title="Career, ADP and the latest on him"
+                    className="min-w-0 flex-1 truncate text-left text-sm font-medium hover:underline"
+                  >
                     {a.name}
-                  </span>
+                  </button>
                   <span className="tnum text-xs text-ink-3">
                     {a.team}
                     {a.bye_week !== null && ` · bye ${a.bye_week}`}
@@ -85,6 +103,14 @@ export function AdvicePanel({ advice, loading, onDraft, canDraft, yourTurn }: Pr
             </li>
           ))}
         </ol>
+      )}
+
+      {profile !== null && (
+        <PlayerProfile
+          ffcId={profile}
+          atPick={atPick}
+          onClose={() => setProfile(null)}
+        />
       )}
     </section>
   );

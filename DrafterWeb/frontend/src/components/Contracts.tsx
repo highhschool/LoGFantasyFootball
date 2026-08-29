@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, contracts } from "../api";
 import type { ContractBook, ContractMarket, ContractSlate } from "../types";
 import { Leaderboard } from "./Leaderboard";
+import { PlayerProfile } from "./PlayerProfile";
 import { SignInDialog } from "./SignInDialog";
 import { StakesNotice, StakesTag } from "./Stakes";
 import { StatusDot, type Phase } from "./StatusDot";
@@ -274,6 +275,7 @@ function Market({
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [profile, setProfile] = useState<number | null>(null);
 
   const held = market.you;
   const side = held?.yes ? "yes" : held?.no ? "no" : null;
@@ -303,7 +305,19 @@ function Market({
   return (
     <li className="flex flex-col gap-3 rounded-lg border border-rule bg-surface p-4">
       <div className="flex items-start justify-between gap-3">
-        <p className="text-sm font-medium">{market.question}</p>
+        {/* Only a market about a particular player has anyone to open. */}
+        {market.ffc_id ? (
+          <button
+            type="button"
+            onClick={() => setProfile(market.ffc_id)}
+            title="Career, ADP and the latest on him"
+            className="text-left text-sm font-medium hover:underline"
+          >
+            {market.question}
+          </button>
+        ) : (
+          <p className="text-sm font-medium">{market.question}</p>
+        )}
         <Outcome market={market} />
       </div>
 
@@ -367,6 +381,10 @@ function Market({
 
       {note && <p className="text-xs text-ink-2">{note}</p>}
       {problem && <p className="text-xs text-danger">{problem}</p>}
+
+      {profile !== null && (
+        <PlayerProfile ffcId={profile} onClose={() => setProfile(null)} />
+      )}
     </li>
   );
 }

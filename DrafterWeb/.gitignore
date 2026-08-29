@@ -20,3 +20,5 @@ frontend/dist/
 backend/app/static/
 data/stats.db
 data/stats.db-*
+# One small file per player, fetched only for players somebody opened.
+data/player-cache/

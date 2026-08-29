@@ -287,6 +287,11 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
 
           <div className="flex min-w-0 flex-col gap-3 lg:min-h-0 lg:overflow-y-auto">
             <AdvicePanel
+              atPick={
+                session.on_the_clock && session.picks_until_your_next !== null
+                  ? session.on_the_clock.overall + session.picks_until_your_next
+                  : undefined
+              }
               advice={advice}
               loading={advising}
               yourTurn={session.your_turn}

@@ -138,8 +138,26 @@ def paid_in(store: SessionStore) -> set[str]:
     return set(store.antes())
 
 
+def about_player(row: dict, pool: PlayerPool | None) -> int:
+    """The player a market is about, when it is about one.
+
+    Only `player_by_pick` names somebody; a market on a position or a manager
+    has no profile to open, and says so by returning nothing.
+    """
+    import json
+
+    if row["kind"] != "player_by_pick" or pool is None:
+        return 0
+    try:
+        key = json.loads(row["params_json"]).get("player_key")
+    except (ValueError, TypeError):
+        return 0
+    found = pool.by_key.get(key)
+    return found.ffc_id if found else 0
+
+
 def market_view(store: SessionStore, row: dict, user_id: str | None,
-                now: datetime | None = None) -> dict:
+                now: datetime | None = None, pool: PlayerPool | None = None) -> dict:
     row = with_slate(store, row)
     config = market_config(row)
     state = replay(config, logged(store.trades(row["market_id"])))
@@ -156,6 +174,8 @@ def market_view(store: SessionStore, row: dict, user_id: str | None,
         "cap": config.position_cap,
         # Which money this is. The one thing on the screen nobody may misread.
         "stakes": row.get("stakes", "play"),
+        # Zero unless the market is about a particular player.
+        "ffc_id": about_player(row, pool),
     }
     if user_id:
         held = state.position(user_id)
@@ -209,6 +229,7 @@ def overview(
 @router.get("/slates/{slate_id}")
 def one_slate(
     slate_id: str,
+    pool: PlayerPool = Depends(get_pool),
     store: SessionStore = Depends(get_store),
     owner: str = Depends(get_owner),
 ) -> dict:
@@ -224,7 +245,7 @@ def one_slate(
         "slate": slate,
         "you": manager,
         "markets": [
-            market_view(store, row, who, now) for row in store.markets(slate_id)
+            market_view(store, row, who, now, pool) for row in store.markets(slate_id)
         ],
     }
 

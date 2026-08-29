@@ -94,6 +94,8 @@ class Advice:
     def as_dict(self) -> dict:
         return {
             "key": self.player.key,
+            # So a recommendation can be opened, not just read.
+            "ffc_id": self.player.ffc_id,
             "name": self.player.name,
             "position": self.player.position,
             "team": self.player.team,

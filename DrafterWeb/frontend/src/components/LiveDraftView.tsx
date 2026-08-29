@@ -168,7 +168,12 @@ export function LiveDraftView({ draft, onDraft, onRename, onExit }: Props) {
         <BoardGrid session={draft} className="h-[50dvh] min-w-0 shrink-0 lg:h-auto lg:min-h-0 lg:shrink lg:flex-1" />
         <div className="flex min-w-0 flex-col gap-3 lg:min-h-0 lg:overflow-y-auto">
           {/* No draft button: the pick is made on Sleeper, not here. */}
-          <AdvicePanel advice={advice} loading={advising} yourTurn={draft.your_turn} />
+          <AdvicePanel
+              atPick={
+                draft.on_the_clock && draft.picks_until_your_next !== null
+                  ? draft.on_the_clock.overall + draft.picks_until_your_next
+                  : undefined
+              } advice={advice} loading={advising} yourTurn={draft.your_turn} />
           <RosterPanel session={draft} />
         </div>
       </div>

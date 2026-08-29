@@ -120,6 +120,8 @@ export interface RosterView {
 
 export interface Advice {
   key: string;
+  /** So a recommendation can be opened, not just read. */
+  ffc_id: number;
   name: string;
   position: Position;
   team: string;
@@ -290,6 +292,8 @@ export interface ContractMarket {
   resolved: boolean | null;
   cap: number;
   stakes: "play" | "real";
+  /** Zero unless the market is about a particular player. */
+  ffc_id: number;
   /** Only present once you have signed in. */
   you?: ContractPosition;
   headroom?: number;
