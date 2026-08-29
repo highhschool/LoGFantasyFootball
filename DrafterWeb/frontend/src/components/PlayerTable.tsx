@@ -193,20 +193,36 @@ function CompareBox({
           : `Compare ${player.name}`;
 
   return (
-    <input
-      type="checkbox"
-      checked={checked}
-      disabled={disabled}
-      // The row opens a profile; ticking a box in it should not.
+    // A label around it, padded, so the thing you have to hit is a good deal
+    // bigger than the dot you are aiming at -- on a phone a bare 12px target
+    // between two other controls is a coin toss. The row opens a profile, so
+    // both the label and the box have to keep their clicks to themselves.
+    <label
       onClick={(e) => e.stopPropagation()}
-      onChange={(e) => {
-        e.stopPropagation();
-        onToggle(player);
-      }}
-      aria-label={why}
-      title={why}
-      className="size-4 shrink-0 accent-accent disabled:opacity-25"
-    />
+      className={`-m-1 flex shrink-0 p-1 ${
+        disabled ? "cursor-not-allowed" : "cursor-pointer"
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => {
+          e.stopPropagation();
+          onToggle(player);
+        }}
+        aria-label={why}
+        title={why}
+        // Stripped back to a plain dot that lights up: no tick, because at
+        // this size the mark is a smudge rather than a symbol, and the only
+        // thing it has to say is on or off. Unset it sits on `ground` -- the
+        // theme's recessed tone -- rather than transparent, which took the
+        // surface behind it and came out pure white in the light theme. It is
+        // also the one tone the row's hover cannot collide with.
+        className="size-3 appearance-none rounded-full border border-ink-3/50 bg-ground transition-colors checked:border-accent checked:bg-accent checked:ring-2 checked:ring-accent/25 hover:border-ink-2 checked:hover:border-accent disabled:opacity-25"
+      />
+    </label>
   );
 }
 
