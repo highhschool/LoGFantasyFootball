@@ -1,9 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type AdpProvenance } from "../api";
 import { AdpBadge } from "./AdpBadge";
 import type { Advice, DraftSession, Player } from "../types";
 import { AdvicePanel } from "./AdvicePanel";
 import { BoardGrid } from "./BoardGrid";
+import {
+  pauseFor,
+  rememberSpeed,
+  rememberedSpeed,
+  SpeedPicker,
+  type Speed,
+} from "./DraftSpeed";
 import { PickClock } from "./PickClock";
 import { InlineName } from "./InlineName";
 import { PlayerTable } from "./PlayerTable";
@@ -45,6 +52,13 @@ interface Props {
 
 export function Draft({ session, onSession, onExit, adp }: Props) {
   const [players, setPlayers] = useState<Player[]>([]);
+  const [speed, setSpeed] = useState<Speed>(rememberedSpeed);
+  const [pacing, setPacing] = useState(false);
+  const running = useRef(false);
+  // Read inside the pacing loop, so changing speed part-way through a round
+  // takes effect on the next pick rather than the next round.
+  const speedNow = useRef(speed);
+  speedNow.current = speed;
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,6 +149,53 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * Take a pick, then let the bots answer at whatever pace is set.
+   *
+   * Each step is a real pick on the server, so leaving mid-run, refreshing or
+   * undoing all behave -- the pause is the only thing that lives in the page.
+   * `running` guards against two runs overlapping, which a fast double-click
+   * would otherwise start.
+   */
+  async function pickAndPace(playerKey: string) {
+    const paced = speed !== "instant";
+    setBusy(true);
+    setError(null);
+
+    try {
+      let next = await api.pick(session.id, playerKey, !paced);
+      onSession(next);
+      if (!paced) return;
+
+      running.current = true;
+      while (running.current && !next.your_turn && !next.complete) {
+        await new Promise((r) => setTimeout(r, pauseFor(speedNow.current)));
+        if (!running.current) break;
+        next = await api.advanceOne(session.id);
+        onSession(next);
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      running.current = false;
+      setPacing(false);
+      setBusy(false);
+    }
+  }
+
+  /** Stop pacing and jump the rest, for when the novelty wears off mid-round. */
+  async function skipAhead() {
+    running.current = false;
+    if (session.your_turn || session.complete) return;
+    await act(async () => {
+      let next = await api.advanceOne(session.id);
+      while (!next.your_turn && !next.complete) {
+        next = await api.advanceOne(session.id);
+      }
+      return next;
+    });
   }
 
   const locked = busy || session.complete || !session.your_turn;
@@ -268,7 +329,10 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
               position={position}
               onSearch={setSearch}
               onPosition={setPosition}
-              onDraft={(p) => act(() => api.pick(session.id, p.key))}
+              onDraft={(p) => {
+                setPacing(speed !== "instant");
+                pickAndPace(p.key);
+              }}
               // Where your next turn lands, so a profile can say whether he
               // survives to it rather than quoting a probability of nothing.
               atPick={
@@ -286,6 +350,18 @@ export function Draft({ session, onSession, onExit, adp }: Props) {
           </div>
 
           <div className="flex min-w-0 flex-col gap-3 lg:min-h-0 lg:overflow-y-auto">
+            <SpeedPicker
+              speed={speed}
+              onChange={(next) => {
+                setSpeed(next);
+                rememberSpeed(next);
+                // Switching to instant mid-run means finish it now.
+                if (next === "instant") skipAhead();
+              }}
+              running={pacing}
+              onSkip={skipAhead}
+            />
+
             <AdvicePanel
               atPick={
                 session.on_the_clock && session.picks_until_your_next !== null

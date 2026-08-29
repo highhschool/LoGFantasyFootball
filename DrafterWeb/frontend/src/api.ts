@@ -119,17 +119,21 @@ export const api = {
     ).then((r) => r.players);
   },
 
-  pick: (id: string, playerKey: string) =>
-    request<DraftSession>(`/api/sessions/${id}/pick`, {
-      method: "POST",
-      body: JSON.stringify({ player_key: playerKey }),
-    }),
+  pick: (id: string, playerKey: string, advance = true) =>
+    request<DraftSession>(
+      `/api/sessions/${id}/pick${advance ? "" : "?advance=false"}`,
+      { method: "POST", body: JSON.stringify({ player_key: playerKey }) },
+    ),
 
   undo: (id: string) =>
     request<DraftSession>(`/api/sessions/${id}/undo`, { method: "POST" }),
 
   autopick: (id: string) =>
     request<DraftSession>(`/api/sessions/${id}/autopick`, { method: "POST" }),
+
+  /** `advance: false` leaves the bots where they are, to be paced one by one. */
+  advanceOne: (id: string) =>
+    request<DraftSession>(`/api/sessions/${id}/advance`, { method: "POST" }),
 
   simulate: (id: string) =>
     request<DraftSession>(`/api/sessions/${id}/simulate`, { method: "POST" }),

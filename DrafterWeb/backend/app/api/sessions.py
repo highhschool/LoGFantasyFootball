@@ -349,18 +349,63 @@ def advice(
 def make_pick(
     session_id: str,
     body: PickIn,
+    advance: bool = Query(
+        True, description="run the bots through to your next turn; false to pace them"
+    ),
     pool: PlayerPool = Depends(get_pool),
     store: SessionStore = Depends(get_store),
     owner: str = Depends(get_owner),
 ) -> dict:
+    """Take a pick.
+
+    By default the bots then run all the way back round to you, which is one
+    call and an instant jump. A paced draft asks for `advance=false` and walks
+    them forward a pick at a time instead, so the board fills the way a draft
+    actually does.
+    """
     session = _load_or_404(store, session_id, owner)
 
     try:
         log = append_pick(session["config"], pool, session["log"], body.player_key, "user")
-        log = _run_bots(session, pool, log)
+        if advance:
+            log = _run_bots(session, pool, log)
     except DraftError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    store.save_log(session_id, log, owner)
+    return _serialize(session, replay(session["config"], pool, log), pool)
+
+
+@router.post("/{session_id}/advance")
+def advance_one(
+    session_id: str,
+    pool: PlayerPool = Depends(get_pool),
+    store: SessionStore = Depends(get_store),
+    owner: str = Depends(get_owner),
+) -> dict:
+    """Let exactly one bot pick, so the board can be watched filling.
+
+    The pacing itself is the client's business -- the wait between picks is
+    presentation, and putting it here would hold a request open for two seconds
+    doing nothing. The server's job is that each step is a real pick in the
+    log, so a refresh mid-run shows the truth and an undo still works.
+    """
+    session = _load_or_404(store, session_id, owner)
+    state = replay(session["config"], pool, session["log"])
+
+    if state.complete:
+        raise HTTPException(status_code=409, detail="the draft is already complete")
+    if state.your_turn:
+        raise HTTPException(status_code=409, detail="it is your pick")
+
+    cell = state.current
+    rng = bots.rng_for(session["seed"], cell.overall)
+    randomness = float(session.get("randomness", 1.0))
+    choice = bots.choose(state, pool, cell.team_slot, rng, randomness)
+    if choice is None:
+        raise HTTPException(status_code=409, detail="no eligible player available")
+
+    log = session["log"] + [LoggedPick(player_key=choice.key, source="bot")]
     store.save_log(session_id, log, owner)
     return _serialize(session, replay(session["config"], pool, log), pool)
 

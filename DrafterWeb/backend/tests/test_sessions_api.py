@@ -448,3 +448,105 @@ class TestSettingsAreCopyable:
 
     def test_no_keepers_copies_as_an_empty_list(self, client):
         assert new_session(client)["config"]["keepers"] == []
+
+
+def available(client, session):
+    """The players this session still has on the board."""
+    r = client.get(f"/api/sessions/{session['id']}/available?limit=5")
+    assert r.status_code == 200, r.text
+    return r.json()["players"]
+
+
+class TestPacingTheBots:
+    """A mock draft can jump to your next turn or walk there a pick at a time.
+
+    The pacing is the client's, but each step has to be a real pick in the log
+    -- so a refresh mid-run shows the truth, an undo still works, and a paced
+    draft ends up identical to one that snapped.
+    """
+
+    def test_picking_still_snaps_by_default(self, client, pool_2025):
+        session = new_session(client, your_slot=3)
+        first = available(client, session)[0]
+
+        after = client.post(f"/api/sessions/{session['id']}/pick",
+                            json={"player_key": first["key"]}).json()
+        assert after["your_turn"] is True, "the bots ran all the way round"
+
+    def test_it_can_be_asked_not_to(self, client):
+        session = new_session(client, your_slot=3)
+        first = available(client, session)[0]
+
+        after = client.post(
+            f"/api/sessions/{session['id']}/pick?advance=false",
+            json={"player_key": first["key"]},
+        ).json()
+        assert after["your_turn"] is False, "it is a bot's turn now"
+        assert len(after["picks"]) == 3, "only the user's pick was added"
+
+    def test_advancing_takes_exactly_one_pick(self, client):
+        session = new_session(client, your_slot=3)
+        first = available(client, session)[0]
+        client.post(f"/api/sessions/{session['id']}/pick?advance=false",
+                    json={"player_key": first["key"]})
+
+        before = client.get(f"/api/sessions/{session['id']}").json()
+        after = client.post(f"/api/sessions/{session['id']}/advance").json()
+        assert len(after["picks"]) == len(before["picks"]) + 1
+        assert after["picks"][-1]["source"] == "bot"
+
+    def test_advancing_repeatedly_reaches_your_turn(self, client):
+        session = new_session(client, your_slot=3)
+        first = available(client, session)[0]
+        state = client.post(f"/api/sessions/{session['id']}/pick?advance=false",
+                            json={"player_key": first["key"]}).json()
+
+        steps = 0
+        while not state["your_turn"] and steps < 30:
+            state = client.post(f"/api/sessions/{session['id']}/advance").json()
+            steps += 1
+
+        assert state["your_turn"] is True
+        assert steps > 0, "there were bots between"
+
+    def test_a_paced_draft_matches_one_that_snapped(self, client):
+        """The pacing is presentation; the board must come out the same."""
+        a = new_session(client, your_slot=3, seed=99)
+        b = new_session(client, your_slot=3, seed=99)
+
+        first = available(client, a)[0]
+        snapped = client.post(f"/api/sessions/{a['id']}/pick",
+                              json={"player_key": first["key"]}).json()
+
+        state = client.post(f"/api/sessions/{b['id']}/pick?advance=false",
+                            json={"player_key": first["key"]}).json()
+        while not state["your_turn"]:
+            state = client.post(f"/api/sessions/{b['id']}/advance").json()
+
+        assert [p["player_name"] for p in state["picks"]] ==                [p["player_name"] for p in snapped["picks"]]
+
+    def test_it_refuses_to_advance_on_your_turn(self, client):
+        """Otherwise a stray timer would take the user's pick for them."""
+        session = new_session(client, your_slot=3)
+        r = client.post(f"/api/sessions/{session['id']}/advance")
+        assert r.status_code == 409
+        assert "your pick" in r.json()["detail"]
+
+    def test_undo_still_works_mid_run(self, client):
+        """A paced draft that is abandoned halfway is still undoable."""
+        session = new_session(client, your_slot=3)
+        first = available(client, session)[0]
+        client.post(f"/api/sessions/{session['id']}/pick?advance=false",
+                    json={"player_key": first["key"]})
+        client.post(f"/api/sessions/{session['id']}/advance")
+
+        after = client.post(f"/api/sessions/{session['id']}/undo").json()
+        assert after["your_turn"] is True
+        assert first["name"] not in [p["player_name"] for p in after["picks"]]
+
+    def test_a_finished_draft_cannot_be_advanced(self, client):
+        session = new_session(client, your_slot=3)
+        client.post(f"/api/sessions/{session['id']}/simulate")
+        r = client.post(f"/api/sessions/{session['id']}/advance")
+        assert r.status_code == 409
+        assert "complete" in r.json()["detail"]
