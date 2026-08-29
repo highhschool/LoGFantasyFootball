@@ -254,6 +254,8 @@ export interface ContractSlate {
   slate_id: string;
   name: string;
   kind: "draft" | "weekly";
+  /** Which money. Fixed for the slate's life. */
+  stakes: "play" | "real";
   opens_at: string;
   closes_at: string | null;
   markets?: number;
@@ -283,9 +285,25 @@ export interface ContractMarket {
   phase: "pending" | "open" | "closed" | "settled";
   resolved: boolean | null;
   cap: number;
+  stakes: "play" | "real";
   /** Only present once you have signed in. */
   you?: ContractPosition;
   headroom?: number;
+}
+
+export interface Standing {
+  rank: number;
+  user_id: string;
+  manager: string;
+  /** Spendable. */
+  balance: number;
+  /** Balance plus what open positions would fetch. What the table ranks. */
+  equity: number;
+  staked: number;
+  settled_pnl: number;
+  open_pnl: number;
+  profit: number;
+  markets: number;
 }
 
 export interface ContractQuote {

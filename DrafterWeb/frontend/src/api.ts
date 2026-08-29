@@ -16,6 +16,7 @@ import type {
   Profile,
   SessionPatch,
   SessionSummary,
+  Standing,
 } from "./types";
 
 /** Surfaces the server's own message rather than a generic failure string. */
@@ -186,8 +187,17 @@ export const keeper = {
 /** Contracts. A fourth tool, so a fourth client. */
 export const contracts = {
   overview: () =>
-    request<{ you: KeeperManager | null; cap: number; slates: ContractSlate[] }>(
-      "/api/contracts",
+    request<{
+      you: KeeperManager | null;
+      cap: number;
+      start: number;
+      balance: number | null;
+      slates: ContractSlate[];
+    }>("/api/contracts"),
+
+  leaderboard: () =>
+    request<{ start: number; you: string | null; standings: Standing[] }>(
+      "/api/contracts/leaderboard",
     ),
 
   slate: (id: string) =>
@@ -205,7 +215,11 @@ export const contracts = {
     }),
 
   trade: (market_id: string, side: "yes" | "no", shares: number) =>
-    request<{ traded: ContractQuote; market: ContractMarket }>("/api/contracts/trade", {
+    request<{
+      traded: ContractQuote;
+      market: ContractMarket;
+      balance: number | null;
+    }>("/api/contracts/trade", {
       method: "POST",
       body: JSON.stringify({ market_id, side, shares }),
     }),

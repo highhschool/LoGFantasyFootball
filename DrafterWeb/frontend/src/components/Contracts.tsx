@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, contracts } from "../api";
 import type { ContractBook, ContractMarket, ContractSlate } from "../types";
+import { Leaderboard } from "./Leaderboard";
 import { SignInDialog } from "./SignInDialog";
+import { StakesNotice, StakesTag } from "./Stakes";
 import { StatusDot, type Phase } from "./StatusDot";
 
 interface Props {
@@ -28,12 +30,15 @@ export function Contracts({ onBack }: Props) {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
+  const [balance, setBalance] = useState<number | null>(null);
+  const [tab, setTab] = useState<"markets" | "season">("markets");
 
   const refresh = useCallback(async (slateId?: string | null) => {
     try {
       const top = await contracts.overview();
       setSlates(top.slates);
       setSignedIn(!!top.you);
+      setBalance(top.balance);
 
       const target = slateId ?? top.slates[0]?.slate_id ?? null;
       setChosen(target);
@@ -62,10 +67,33 @@ export function Contracts({ onBack }: Props) {
         </button>
         <h1 className="text-3xl font-semibold tracking-tight">Contracts</h1>
         <p className="text-sm text-ink-3">
-          A price is the league's odds. A contract pays $1 if it lands, and five
-          a market is the most anyone can hold.
+          A price is the league's odds. A contract pays $1 if it lands.
         </p>
       </header>
+
+      {balance !== null && (
+        <div className="flex flex-wrap items-baseline gap-x-2 rounded-lg border border-rule bg-surface px-4 py-3">
+          <span className="text-sm text-ink-3">Your balance</span>
+          <strong className="tnum text-lg font-semibold">
+            {cents(balance)}
+          </strong>
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        {(["markets", "season"] as const).map((which) => (
+          <button
+            key={which}
+            type="button"
+            onClick={() => setTab(which)}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
+              tab === which ? "bg-accent text-ground" : "bg-raised text-ink-2"
+            }`}
+          >
+            {which === "markets" ? "Markets" : "Season"}
+          </button>
+        ))}
+      </div>
 
       {error && <p className="text-sm text-danger">{error}</p>}
 
@@ -110,14 +138,26 @@ export function Contracts({ onBack }: Props) {
               }`}
             >
               {s.name}
+              {s.stakes === "real" && (
+                <span className="ml-1.5 text-[10px] tracking-wide uppercase">
+                  real
+                </span>
+              )}
             </button>
           ))}
         </div>
       )}
 
-      {slate && <Window slate={slate} markets={markets} />}
+      {tab === "season" && <Leaderboard />}
 
-      <ul className="flex flex-col gap-3">
+      {tab === "markets" && slate && (
+        <>
+          <Window slate={slate} markets={markets} />
+          <StakesNotice stakes={slate.stakes} />
+        </>
+      )}
+
+      <ul className={`flex flex-col gap-3 ${tab === "season" ? "hidden" : ""}`}>
         {markets.map((m) => (
           <Market
             key={m.market_id}
@@ -128,7 +168,7 @@ export function Contracts({ onBack }: Props) {
         ))}
       </ul>
 
-      {!markets.length && (
+      {tab === "markets" && !markets.length && (
         <p className="text-sm text-ink-3">No markets yet.</p>
       )}
     </div>
@@ -165,6 +205,7 @@ function Window({ slate, markets }: { slate: ContractSlate; markets: ContractMar
 
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-3">
+      <StakesTag stakes={slate.stakes} />
       <StatusDot phase={phase} />
       <span>
         {phase === "pending" && <>&middot; opens {when(slate.opens_at)}</>}
@@ -291,6 +332,12 @@ function Market({
           </button>
         )}
       </div>
+
+      {canTrade && open && room < market.cap && room > 0 && (
+        <p className="text-xs text-ink-3">
+          {room} of {market.cap} left in this market.
+        </p>
+      )}
 
       {held && held.yes + held.no > 0 && (
         <p className="text-xs text-ink-3">
