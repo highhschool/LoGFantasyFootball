@@ -161,6 +161,7 @@ def to_players(payload: dict) -> list[Player]:
                 high=_opt_int(entry.get("high")) or 0,
                 low=_opt_int(entry.get("low")) or 0,
                 stdev=float(entry.get("stdev", 0) or 0),
+                ffc_id=_opt_int(entry.get("player_id")) or 0,
             )
         )
 

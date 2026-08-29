@@ -42,6 +42,11 @@ class Player:
     high: int
     low: int
     stdev: float
+    # Fantasy Football Calculator's own id, carried through from the ADP feed.
+    # It is what their per-player endpoint is keyed on -- headshots, news -- and
+    # it makes a clean URL where the composite key needs escaping. Zero for a
+    # player who came from a CSV rather than the API.
+    ffc_id: int = 0
 
 
 @dataclass(frozen=True, slots=True)

@@ -17,7 +17,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config
-from .api import admin, assistant, contracts, contracts_admin, keeper, me, sessions
+from .api import (
+    admin, assistant, contracts, contracts_admin, keeper, me, profile, sessions,
+)
 from .core.models import DraftConfig, RankingsError
 from .core.order import build_board, picks_for_slot
 from .core import adp
@@ -38,6 +40,8 @@ _pool: PlayerPool | None = None
 _load_error: str | None = None
 _store: SessionStore | None = None
 _sleeper: SleeperClient | None = None
+_stats: "StatsStore | None" = None
+_ffc: "FfcClient | None" = None
 
 
 def _load() -> None:
@@ -94,6 +98,29 @@ def get_sleeper_client() -> SleeperClient:
     if _sleeper is None:
         _sleeper = SleeperClient(cache_dir=config.DATA_DIR / "sleeper-cache")
     return _sleeper
+
+
+def get_stats_store() -> "StatsStore":
+    """Ten seasons of statistics, in a database of their own.
+
+    Separate from the league's, because this one is a cache: everything in it
+    is a URL away, and it can be deleted and rebuilt at will.
+    """
+    global _stats
+    from .stats_store import StatsStore
+
+    if _stats is None:
+        _stats = StatsStore(config.DATA_DIR / "stats.db")
+    return _stats
+
+
+def get_ffc_client() -> "FfcClient":
+    global _ffc
+    from .integrations.ffc import FfcClient
+
+    if _ffc is None:
+        _ffc = FfcClient(cache_dir=config.DATA_DIR / "player-cache")
+    return _ffc
 
 
 def get_session_store() -> SessionStore:
@@ -197,6 +224,7 @@ def board(
 app.include_router(sessions.router)
 app.include_router(assistant.router)
 app.include_router(me.router)
+app.include_router(profile.router)
 app.include_router(keeper.router)
 app.include_router(contracts.router)
 app.include_router(contracts_admin.router)
