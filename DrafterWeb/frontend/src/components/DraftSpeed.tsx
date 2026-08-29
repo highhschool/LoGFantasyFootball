@@ -8,11 +8,16 @@
  */
 // Declaration order is the order they are drawn, running from no wait to the
 // longest one rather than jumping about.
+//
+// The two ends are drawn as chevrons rather than words, so the row reads as a
+// scale with Normal in the middle and slower and faster either side of it,
+// instead of four labels that have to be compared. They still carry their
+// names for anyone reading the page rather than looking at it.
 export const SPEEDS = {
-  instant: { label: "Instant", pause: 0 },
-  slow: { label: "Slow", pause: 1800 },
-  normal: { label: "Normal", pause: 900 },
-  fast: { label: "Fast", pause: 350 },
+  instant: { label: "Instant", name: "Instant", pause: 0 },
+  slow: { label: "«", name: "Slow", pause: 900 },
+  normal: { label: "Normal", name: "Normal", pause: 350 },
+  fast: { label: "»", name: "Fast", pause: 200 },
 } as const;
 
 export type Speed = keyof typeof SPEEDS;
@@ -61,18 +66,29 @@ export function SpeedPicker({
   return (
     <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
       <span className="text-xs text-ink-3">Bots</span>
-      {(Object.keys(SPEEDS) as Speed[]).map((key) => (
-        <button
-          key={key}
-          type="button"
-          onClick={() => onChange(key)}
-          className={`rounded-md px-2 py-1 text-xs font-medium ${
-            key === speed ? "bg-accent text-ground" : "bg-raised text-ink-2 hover:text-ink"
-          }`}
-        >
-          {SPEEDS[key].label}
-        </button>
-      ))}
+      {(Object.keys(SPEEDS) as Speed[]).map((key) => {
+        const { label, name } = SPEEDS[key];
+        const glyph = label !== name;
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onChange(key)}
+            // A chevron on its own says nothing to a screen reader, and on a
+            // touch screen it is a smaller target than a word -- so it keeps
+            // the name and gets padded back out to the width of one.
+            aria-label={glyph ? name : undefined}
+            title={glyph ? name : undefined}
+            className={`rounded-md py-1 text-xs font-medium ${
+              glyph ? "w-8 leading-none" : "px-2"
+            } ${
+              key === speed ? "bg-accent text-ground" : "bg-raised text-ink-2 hover:text-ink"
+            }`}
+          >
+            {label}
+          </button>
+        );
+      })}
 
       {running && (
         <button
