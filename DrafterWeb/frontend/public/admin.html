@@ -202,16 +202,23 @@
 
       <div id="suggestions" hidden></div>
 
+      <div class="bar">
+        <select id="f-slate" aria-label="Slate">
+          <option value="">All slates</option>
+        </select>
+      </div>
+
       <div class="wrap">
         <table>
           <thead>
             <tr>
-              <th>Trading</th><th>Market</th><th class="num">Yes</th><th class="num">Traded</th>
+              <th>Slate</th><th>Trading</th><th>Market</th>
+              <th class="num">Yes</th><th class="num">Traded</th>
               <th class="num">If yes</th><th class="num">If no</th>
               <th>Closes</th><th>Outcome</th><th></th>
             </tr>
           </thead>
-          <tbody id="contract-rows"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
+          <tbody id="contract-rows"><tr><td colspan="10" class="muted">Loading…</td></tr></tbody>
         </table>
       </div>
 
@@ -599,6 +606,23 @@
       });
       renderSlates(d.slates, counts);
 
+      // Nineteen slates and a hundred markets by December, so the table needs
+      // to say which is which and to be narrowable to one.
+      slateNames = {};
+      d.slates.forEach((s) => { slateNames[s.slate_id] = s.name; });
+
+      const filter = document.getElementById("f-slate");
+      const held = filter.value;
+      filter.innerHTML = '<option value="">All slates</option>' +
+        d.slates.map((s) =>
+          `<option value="${s.slate_id}">${escape(s.name)} (${counts[s.slate_id] || 0})</option>`
+        ).join("");
+      filter.value = d.slates.some((s) => s.slate_id === held) ? held : "";
+
+      const showing = filter.value
+        ? d.markets.filter((m) => m.slate_id === filter.value)
+        : d.markets;
+
       // The number to watch on the night: what is actually on the line, not
       // what was budgeted when the markets opened.
       const worst = Math.min(d.house_if_all_yes, d.house_if_all_no);
@@ -608,13 +632,16 @@
           ` · ${d.slates.length} slate${d.slates.length === 1 ? "" : "s"}`
         : "No markets yet.";
 
-      if (!d.markets.length) {
-        rows.innerHTML = '<tr><td colspan="8" class="muted">Open a slate, then add markets.</td></tr>';
+      if (!showing.length) {
+        rows.innerHTML = `<tr><td colspan="10" class="muted">${
+          d.markets.length ? "No markets on that slate."
+                           : "Open a slate, then add markets."}</td></tr>`;
         return;
       }
 
-      rows.innerHTML = d.markets.map((m) => `
+      rows.innerHTML = showing.map((m) => `
         <tr>
+          <td class="muted">${escape(slateNames[m.slate_id] || "—")}</td>
           <td class="muted"><span class="dot ${m.phase}" title="${m.phase}"></span>${m.phase}</td>
           <td>${escape(m.question)}</td>
           <td class="num">${m.price_yes}&cent;</td>
@@ -631,7 +658,7 @@
 
       await loadLedger();
     } catch (e) {
-      rows.innerHTML = `<tr><td colspan="8" class="err">Could not load: ${escape(String(e))}</td></tr>`;
+      rows.innerHTML = `<tr><td colspan="10" class="err">Could not load: ${escape(String(e))}</td></tr>`;
     }
   }
 
@@ -753,6 +780,7 @@
   // a dropdown after having just created one is how markets ended up on a
   // slate nobody meant -- the dropdown defaulted to the first, not the new.
   let suggestingFor = null;
+  let slateNames = {};
 
   function renderSlates(slates, counts) {
     const rows = document.getElementById("slate-rows");
@@ -929,6 +957,8 @@
     }
     await loadPot();
   });
+
+  document.getElementById("f-slate").addEventListener("change", loadContracts);
 
   document.getElementById("refresh-contracts").addEventListener("click", () => {
     loadContracts();
