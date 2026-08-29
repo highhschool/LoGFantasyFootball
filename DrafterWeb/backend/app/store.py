@@ -647,6 +647,25 @@ class SessionStore:
             ).fetchone()
         return dict(row) if row else None
 
+    def delete_slate(self, slate_id: str) -> bool:
+        """Remove a slate, but only while it holds no markets.
+
+        A slate with markets in it has prices somebody may have traded
+        against; an empty one is a typo, and there is no other way to be rid
+        of one.
+        """
+        with self._connect() as conn:
+            held = conn.execute(
+                "SELECT COUNT(*) FROM contract_markets WHERE slate_id = ?",
+                (slate_id,),
+            ).fetchone()[0]
+            if held:
+                return False
+            cur = conn.execute(
+                "DELETE FROM contract_slates WHERE slate_id = ?", (slate_id,)
+            )
+        return cur.rowcount > 0
+
     def create_market(
         self,
         slate_id: str,

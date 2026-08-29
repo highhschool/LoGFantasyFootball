@@ -184,12 +184,22 @@
 
       <div class="bar">
         <button id="new-slate">New draft slate</button>
-        <button id="suggest">Suggest markets</button>
         <button id="settle">Settle what the draft has answered</button>
         <button id="refresh-contracts">Refresh</button>
       </div>
 
       <div id="slate-form" hidden></div>
+
+      <div class="wrap">
+        <table>
+          <thead><tr>
+            <th>Slate</th><th>Money</th><th>Opens</th><th>Closes</th>
+            <th class="num">Markets</th><th></th>
+          </tr></thead>
+          <tbody id="slate-rows"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+
       <div id="suggestions" hidden></div>
 
       <div class="wrap">
@@ -583,6 +593,12 @@
       document.getElementById("contracts-summary").textContent =
         `${d.markets.length} market${d.markets.length === 1 ? "" : "s"}`;
 
+      const counts = {};
+      d.markets.forEach((m) => {
+        counts[m.slate_id] = (counts[m.slate_id] || 0) + 1;
+      });
+      renderSlates(d.slates, counts);
+
       // The number to watch on the night: what is actually on the line, not
       // what was budgeted when the markets opened.
       const worst = Math.min(d.house_if_all_yes, d.house_if_all_no);
@@ -644,16 +660,16 @@
     if (box.hidden) return;
     box.innerHTML = `
       <div class="bar">
-        <input type="search" id="slate-name" placeholder="Slate name" value="Draft night">
-        <input type="search" id="slate-start" placeholder="2026-09-01T18:30:00-05:00"
-               value="2026-09-01T18:30:00-05:00">
+        <input type="search" id="slate-name" placeholder="Name it, e.g. Draft night 2026">
+        <input type="datetime-local" id="slate-start" value="2026-09-01T18:30">
         <select id="slate-stakes" aria-label="Which money">
           <option value="play">Play money</option>
           <option value="real">Real money</option>
         </select>
         <button id="save-slate">Open it</button>
       </div>
-      <p class="note">Opens on the Tuesday 9am before that time, and closes when the draft starts.</p>
+      <p class="note">The draft's start time, in Central. The slate opens at 9am
+      on the Tuesday before it and closes when the draft begins.</p>
       <p class="note" id="stakes-note"></p>`;
 
     // Which money a slate uses is fixed for its life -- a market that changed
@@ -690,7 +706,10 @@
       e.target.textContent = r.ok
         ? `Opens ${when(d.slate.opens_at)}`
         : `Failed: ${d.detail || r.status}`;
-      if (r.ok) await loadContracts();
+      if (r.ok) {
+        document.getElementById("slate-name").value = "";
+        await loadContracts();
+      }
       setTimeout(() => { e.target.disabled = false; e.target.textContent = "Open it"; }, 3000);
     });
   });
@@ -730,37 +749,77 @@
   // A shortlist rather than a blank page. Ninety markets get built over a
   // season, six every Tuesday, and picking them from nothing is the part that
   // stops being fun in about week three.
-  document.getElementById("suggest").addEventListener("click", async (e) => {
-    const box = document.getElementById("suggestions");
-    if (!box.hidden) { box.hidden = true; return; }
+  // Suggestions belong to a slate, not to the panel. Choosing the slate in
+  // a dropdown after having just created one is how markets ended up on a
+  // slate nobody meant -- the dropdown defaulted to the first, not the new.
+  let suggestingFor = null;
 
-    const d = await fetch("/api/admin/contracts").then((r) => r.json());
-    if (!d.slates.length) {
-      box.hidden = false;
-      box.innerHTML = '<p class="err">Open a slate first.</p>';
+  function renderSlates(slates, counts) {
+    const rows = document.getElementById("slate-rows");
+    if (!slates.length) {
+      rows.innerHTML = '<tr><td colspan="6" class="muted">No slates yet.</td></tr>';
       return;
     }
+    rows.innerHTML = slates.map((s) => {
+      const held = counts[s.slate_id] || 0;
+      return `<tr>
+        <td>${escape(s.name)}</td>
+        <td><span class="pill ${s.stakes === "real" ? "bad" : "idle"}">${
+          s.stakes === "real" ? "real money" : "play"}</span></td>
+        <td class="muted">${escape(when(s.opens_at))}</td>
+        <td class="muted">${s.closes_at ? escape(when(s.closes_at)) : "per game"}</td>
+        <td class="num">${held}</td>
+        <td>
+          <button data-suggest="${s.slate_id}">Add markets</button>
+          ${held === 0 ? `<button data-dropslate="${s.slate_id}">Delete</button>` : ""}
+        </td>
+      </tr>`;
+    }).join("");
+  }
 
-    box.hidden = false;
-    box.innerHTML = `
-      <div class="bar">
-        <select id="sg-slate">${d.slates.map((s) =>
-          `<option value="${s.slate_id}">${escape(s.name)}</option>`).join("")}</select>
-        <select id="sg-like">
-          <option value="">Any mix</option>
-          ${d.slates.map((s) =>
-            `<option value="${s.slate_id}">Same shape as ${escape(s.name)}</option>`).join("")}
-        </select>
-        <button id="sg-go">Find</button>
-      </div>
-      <div id="sg-out"></div>`;
+  document.addEventListener("click", async (e) => {
+    const add = e.target.closest("[data-suggest]");
+    const drop = e.target.closest("[data-dropslate]");
 
-    document.getElementById("sg-go").addEventListener("click", findSuggestions);
-    findSuggestions();
+    if (add) {
+      suggestingFor = add.dataset.suggest;
+      const box = document.getElementById("suggestions");
+      box.hidden = false;
+      const d = await fetch("/api/admin/contracts").then((r) => r.json());
+      const slate = d.slates.find((s) => s.slate_id === suggestingFor);
+      box.innerHTML = `
+        <div class="bar">
+          <strong>Adding to ${escape(slate ? slate.name : "")}</strong>
+          <select id="sg-like">
+            <option value="">Any mix</option>
+            ${d.slates.filter((s) => s.slate_id !== suggestingFor).map((s) =>
+              `<option value="${s.slate_id}">Same shape as ${escape(s.name)}</option>`
+            ).join("")}
+          </select>
+          <button id="sg-go">Refresh</button>
+          <button id="sg-close">Done</button>
+        </div>
+        <div id="sg-out"></div>`;
+      document.getElementById("sg-go").addEventListener("click", findSuggestions);
+      document.getElementById("sg-close").addEventListener("click", () => {
+        box.hidden = true;
+        suggestingFor = null;
+      });
+      findSuggestions();
+      box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    if (drop) {
+      drop.disabled = true;
+      const r = await fetch(`/api/admin/contracts/slates/${drop.dataset.dropslate}`,
+                            { method: "DELETE" });
+      if (r.ok) return loadContracts();
+      drop.textContent = `Failed: ${(await r.json()).detail || r.status}`;
+    }
   });
 
   async function findSuggestions() {
-    const slate = document.getElementById("sg-slate").value;
+    const slate = suggestingFor;
     const like = document.getElementById("sg-like").value;
     const out = document.getElementById("sg-out");
     out.innerHTML = '<p class="muted">Searching the board…</p>';
@@ -801,6 +860,7 @@
         if (r.ok) {
           btn.textContent = "Added";
           await loadContracts();
+          await findSuggestions();
         } else {
           btn.textContent = `Failed: ${(await r.json()).detail || r.status}`;
           btn.disabled = false;

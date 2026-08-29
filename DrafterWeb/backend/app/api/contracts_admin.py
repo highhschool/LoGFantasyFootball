@@ -159,7 +159,9 @@ def create_slate(
                     status_code=422,
                     detail="a draft slate needs the draft's start time",
                 )
-            built = draft_slate("", body.name, datetime.fromisoformat(body.draft_start))
+            # A date picker sends no offset; that is read as league time.
+            built = draft_slate("", body.name,
+                                datetime.fromisoformat(body.draft_start))
         else:
             opens = (
                 datetime.fromisoformat(body.opens_at) if body.opens_at
@@ -173,6 +175,26 @@ def create_slate(
         body.name, body.kind, built.opens_at, built.closes_at, body.stakes
     )
     return {"slate": store.slate(slate_id)}
+
+
+@router.delete("/slates/{slate_id}")
+def remove_slate(
+    slate_id: str,
+    request: Request,
+    store: SessionStore = Depends(get_store),
+) -> dict:
+    """Drop a slate that holds no markets."""
+    require_admin(request)
+
+    slate = store.slate(slate_id)
+    if slate is None:
+        raise HTTPException(status_code=404, detail="no such slate")
+    if not store.delete_slate(slate_id):
+        raise HTTPException(
+            status_code=409,
+            detail="that slate has markets in it; remove those first",
+        )
+    return {"deleted": slate_id, "name": slate["name"]}
 
 
 @router.post("/markets")

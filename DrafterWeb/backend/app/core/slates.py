@@ -48,6 +48,16 @@ def _at(day: datetime, clock: time) -> datetime:
     return datetime.combine(day.date(), clock, tzinfo=LEAGUE_TZ)
 
 
+def in_league_time(when: datetime) -> datetime:
+    """Read a naive time as Central rather than refusing it.
+
+    A browser's date picker hands back a wall-clock time with no zone. Refusing
+    it makes the commissioner type an ISO offset by hand, and getting that
+    wrong by an hour is how a market closes after kickoff.
+    """
+    return when if when.tzinfo else when.replace(tzinfo=LEAGUE_TZ)
+
+
 def next_open(after: datetime) -> datetime:
     """The next Tuesday 9am on or after `after`.
 
@@ -127,8 +137,7 @@ def draft_slate(slate_id: str, name: str, draft_start: datetime) -> Slate:
     Opens on the Tuesday cadence like any other, and closes at the first pick
     rather than at a kickoff, because the draft is the only event in it.
     """
-    if draft_start.tzinfo is None:
-        raise SlateError("the draft start needs an explicit timezone")
+    draft_start = in_league_time(draft_start)
     return Slate(
         slate_id=slate_id,
         name=name,

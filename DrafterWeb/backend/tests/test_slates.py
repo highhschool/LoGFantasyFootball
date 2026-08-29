@@ -112,9 +112,18 @@ class TestTheDraftSlate:
         slate = draft_slate("s1", "Draft night", self.DRAFT)
         assert timedelta(hours=9) < slate.closes_at - slate.opens_at < timedelta(hours=10)
 
-    def test_a_draft_needs_a_timezone(self):
-        with pytest.raises(SlateError, match="explicit timezone"):
-            draft_slate("s1", "d", datetime(2026, 9, 1, 18, 30))
+    def test_a_time_without_a_zone_is_read_as_league_time(self):
+        """A date picker sends no offset, and refusing it makes somebody type
+        an ISO string by hand -- which is how a close lands an hour late."""
+        naive = draft_slate("s1", "d", datetime(2026, 9, 1, 18, 30))
+        assert naive.closes_at == ct(2026, 9, 1, 18, 30)
+        assert naive.opens_at == ct(2026, 9, 1, 9)
+
+    def test_an_explicit_zone_is_still_honoured(self):
+        from datetime import timezone as tz
+
+        utc = draft_slate("s1", "d", datetime(2026, 9, 1, 23, 30, tzinfo=tz.utc))
+        assert utc.closes_at == ct(2026, 9, 1, 18, 30), "same instant, stated twice"
 
     def test_a_draft_before_nine_hangs_off_the_previous_tuesday(self):
         """Nine o'clock that morning has not happened yet."""
