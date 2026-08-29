@@ -20,6 +20,7 @@ export function Leaderboard() {
   const [rows, setRows] = useState<Standing[]>([]);
   const [you, setYou] = useState<string | null>(null);
   const [start, setStart] = useState(20_000);
+  const [waiting, setWaiting] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -29,6 +30,7 @@ export function Leaderboard() {
         setRows(d.standings);
         setYou(d.you);
         setStart(d.start);
+        setWaiting(d.waiting);
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
   }, []);
@@ -36,7 +38,8 @@ export function Leaderboard() {
   if (error) return <p className="text-sm text-danger">{error}</p>;
   if (!rows.length) return <p className="text-sm text-ink-3">Nothing yet.</p>;
 
-  const untouched = rows.every((r) => r.markets === 0);
+  const playing = rows.filter((r) => r.entered);
+  const untouched = playing.length > 0 && playing.every((r) => r.markets === 0);
 
   return (
     <div className="flex flex-col gap-3">
@@ -47,7 +50,13 @@ export function Leaderboard() {
 
       {untouched && (
         <p className="text-sm text-ink-3">
-          Nobody has traded yet, so it is twelve-way tie.
+          Nobody has traded yet, so everyone is level.
+        </p>
+      )}
+
+      {!playing.length && (
+        <p className="rounded-lg border border-warn/40 bg-warn-soft px-4 py-3 text-sm text-warn">
+          Nobody has paid into the season pot yet, so nobody has a balance.
         </p>
       )}
 
@@ -69,7 +78,7 @@ export function Leaderboard() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {playing.map((r) => (
               <tr
                 key={r.user_id}
                 className={`border-b border-rule last:border-0 ${
@@ -111,6 +120,15 @@ export function Leaderboard() {
           </tbody>
         </table>
       </div>
+
+      {waiting.length > 0 && (
+        <p className="text-sm text-ink-3">
+          {/* Not on the table at all rather than sitting at zero, which would
+              read as having lost everything instead of not having joined. */}
+          Not in yet:{" "}
+          <span className="text-ink-2">{waiting.join(", ")}</span>
+        </p>
+      )}
 
       <p className="text-xs text-ink-3">
         <strong>Cash</strong> is what you can spend; <strong>riding</strong> is

@@ -31,6 +31,7 @@ export function Contracts({ onBack }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [balance, setBalance] = useState<number | null>(null);
+  const [entry, setEntry] = useState<{ entered: boolean; ante: number } | null>(null);
   const [tab, setTab] = useState<"markets" | "season">("markets");
 
   const refresh = useCallback(async (slateId?: string | null) => {
@@ -39,6 +40,7 @@ export function Contracts({ onBack }: Props) {
       setSlates(top.slates);
       setSignedIn(!!top.you);
       setBalance(top.balance);
+      setEntry({ entered: top.entered, ante: top.ante });
 
       const target = slateId ?? top.slates[0]?.slate_id ?? null;
       setChosen(target);
@@ -71,13 +73,22 @@ export function Contracts({ onBack }: Props) {
         </p>
       </header>
 
-      {balance !== null && (
+      {balance !== null && entry?.entered && (
         <div className="flex flex-wrap items-baseline gap-x-2 rounded-lg border border-rule bg-surface px-4 py-3">
           <span className="text-sm text-ink-3">Your balance</span>
           <strong className="tnum text-lg font-semibold">
             {cents(balance)}
           </strong>
         </div>
+      )}
+
+      {/* An empty wallet with no explanation reads as a bug. */}
+      {signedIn && entry && !entry.entered && (
+        <p className="rounded-lg border border-warn/40 bg-warn-soft px-4 py-3 text-sm text-warn">
+          <strong>You are not in the season yet.</strong> Your balance arrives
+          when the commissioner marks your {cents(entry.ante)} ante paid. Until
+          then you can watch the board but not trade.
+        </p>
       )}
 
       <div className="flex gap-2">

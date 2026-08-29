@@ -90,9 +90,18 @@ def app(tmp_path, monkeypatch, rankings_dir_2025, picks):
 
 @pytest.fixture
 def codes(app):
+    """The league, signed up and paid into the season pot.
+
+    The ante is the entry -- a bankroll only exists once it is paid -- so the
+    tests that are about trading start from a league that has paid. The gate
+    itself is covered by TestTheAnteIsTheEntry.
+    """
     with TestClient(app) as owner:
         owner.post("/api/admin/keepers/sync", headers=ADMIN)
         listed = owner.get("/api/admin/keepers/codes", headers=ADMIN).json()["managers"]
+        for m in listed:
+            owner.post("/api/admin/contracts/pot", headers=ADMIN,
+                       json={"user_id": m["user_id"]})
     return {m["user_id"]: m for m in listed}
 
 
@@ -853,3 +862,109 @@ class TestStandings:
         table = signed_in(app, codes["u2"]).get(
             "/api/contracts/leaderboard").json()["standings"]
         assert {r["equity"] for r in table} == {START}
+
+
+class TestTheAnteIsTheEntry:
+    """A bankroll arrives with the ante, not with the sign-in.
+
+    Otherwise a pot of real money is played for by people who have not put any
+    into it. The gate has to hold inside the trade's own transaction, since a
+    balance read on another connection could miss an ante recorded a moment
+    earlier -- or an ante undone a moment earlier.
+    """
+
+    @pytest.fixture
+    def unpaid(self, app):
+        """Signed up, nobody paid in."""
+        with TestClient(app) as owner:
+            owner.post("/api/admin/keepers/sync", headers=ADMIN)
+            listed = owner.get(
+                "/api/admin/keepers/codes", headers=ADMIN).json()["managers"]
+        return {m["user_id"]: m for m in listed}
+
+    def test_an_unpaid_manager_has_nothing(self, app, unpaid):
+        client = signed_in(app, unpaid["u1"])
+        top = client.get("/api/contracts").json()
+        assert top["balance"] == 0
+        assert top["entered"] is False
+        assert top["ante"] > 0, "and the screen is told what it costs"
+
+    def test_they_cannot_trade(self, app, play_slate, player, unpaid, during):
+        made = a_market(app, play_slate, player)
+        r = signed_in(app, unpaid["u1"]).post(
+            "/api/contracts/trade",
+            json={"market_id": made["market_id"], "side": "yes", "shares": 1})
+        assert r.status_code == 409
+        assert "you have" in r.json()["detail"]
+
+    def test_marking_them_paid_hands_over_the_bankroll(self, app, unpaid):
+        client = signed_in(app, unpaid["u1"])
+        assert client.get("/api/contracts").json()["balance"] == 0
+
+        with TestClient(app) as owner:
+            owner.post("/api/admin/contracts/pot", headers=ADMIN,
+                       json={"user_id": "u1"})
+
+        top = client.get("/api/contracts").json()
+        assert top["balance"] == START
+        assert top["entered"] is True
+
+    def test_and_then_they_can_trade(self, app, play_slate, player, unpaid, during):
+        made = a_market(app, play_slate, player)
+        with TestClient(app) as owner:
+            owner.post("/api/admin/contracts/pot", headers=ADMIN,
+                       json={"user_id": "u1"})
+        r = signed_in(app, unpaid["u1"]).post(
+            "/api/contracts/trade",
+            json={"market_id": made["market_id"], "side": "yes", "shares": 3})
+        assert r.status_code == 200, r.text
+
+    def test_paying_one_does_not_pay_the_rest(self, app, unpaid):
+        with TestClient(app) as owner:
+            owner.post("/api/admin/contracts/pot", headers=ADMIN,
+                       json={"user_id": "u1"})
+        assert signed_in(app, unpaid["u2"]).get(
+            "/api/contracts").json()["balance"] == 0
+
+    def test_undoing_an_ante_takes_the_bankroll_back(self, app, codes):
+        """For a payment marked in error, before anybody has traded on it."""
+        client = signed_in(app, codes["u1"])
+        assert client.get("/api/contracts").json()["balance"] == START
+
+        with TestClient(app) as owner:
+            owner.delete("/api/admin/contracts/pot/u1", headers=ADMIN)
+
+        assert client.get("/api/contracts").json()["balance"] == 0
+
+    def test_the_standings_put_the_unpaid_below_everyone(self, app, unpaid):
+        """Not out of the running -- not yet in it."""
+        with TestClient(app) as owner:
+            for who in ("u1", "u2"):
+                owner.post("/api/admin/contracts/pot", headers=ADMIN,
+                           json={"user_id": who})
+
+        board = signed_in(app, unpaid["u1"]).get(
+            "/api/contracts/leaderboard").json()
+        table = board["standings"]
+
+        assert [r["entered"] for r in table[:2]] == [True, True]
+        assert all(r["entered"] is False for r in table[2:])
+        assert len(board["waiting"]) == 10
+
+    def test_an_unpaid_manager_reads_as_nothing_not_as_a_loss(self, app, unpaid):
+        table = signed_in(app, unpaid["u1"]).get(
+            "/api/contracts/leaderboard").json()["standings"]
+        row = table[0]
+        assert row["equity"] == 0
+        assert row["start"] == 0
+        assert row["profit"] == 0, "zero of zero is level, not a wipeout"
+
+    def test_the_pot_only_pays_the_paid(self, app, unpaid):
+        with TestClient(app) as owner:
+            owner.post("/api/admin/contracts/pot", headers=ADMIN,
+                       json={"user_id": "u2"})
+            pot = owner.get("/api/admin/contracts/pot", headers=ADMIN).json()
+
+        assert pot["entered"] == 1
+        assert [p["user_id"] for p in pot["projected"]] == ["u2"]
+        assert sum(p["amount"] for p in pot["projected"]) == pot["pot"]

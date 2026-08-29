@@ -42,9 +42,16 @@ class Standing:
     open_pnl: int        # on paper, from those that have not
     markets: int         # how many they have traded
 
+    #: What this manager started with. Zero until their ante is paid.
+    start: int = START
+
     @property
     def profit(self) -> int:
-        return self.equity - START
+        return self.equity - self.start
+
+    @property
+    def entered(self) -> bool:
+        return self.start > 0
 
     def as_dict(self) -> dict:
         return {
@@ -56,6 +63,8 @@ class Standing:
             "open_pnl": self.open_pnl,
             "profit": self.profit,
             "markets": self.markets,
+            "start": self.start,
+            "entered": self.entered,
         }
 
 
@@ -63,6 +72,7 @@ def standings(
     books: list[tuple[MarketState, bool | None]],
     everyone: list[str] | None = None,
     start: int = START,
+    entered: set[str] | None = None,
 ) -> dict[str, Standing]:
     """Every manager's position across a season's markets.
 
@@ -72,6 +82,10 @@ def standings(
 
     Managers who have never traded are included when `everyone` is given, so a
     leaderboard shows the whole league rather than only the people on it.
+
+    `entered` names the managers who have paid into the season pot. Anyone
+    outside it starts at nothing: the bankroll is the stake, and a pot of real
+    money should not be played for by somebody who has not put any in.
     """
     spent: dict[str, int] = {}
     won: dict[str, int] = {}
@@ -106,9 +120,11 @@ def standings(
         back = won.get(user, 0)
         open_value = value.get(user, 0)
         tied = staked.get(user, 0)
+        mine = start if entered is None or user in entered else 0
 
-        balance = start - paid + back
+        balance = mine - paid + back
         out[user] = Standing(
+            start=mine,
             user_id=user,
             balance=balance,
             equity=balance + open_value,
@@ -126,15 +142,20 @@ def leaderboard(
     books: list[tuple[MarketState, bool | None]],
     everyone: list[str] | None = None,
     start: int = START,
+    entered: set[str] | None = None,
 ) -> list[Standing]:
     """Standings, richest first.
 
     Ties break on settled profit, so somebody holding an open position is not
     ranked above somebody who has already been proved right by the same amount.
+
+    Managers who have not paid their ante sort below everyone who has, whatever
+    their number. They are not out of the running so much as not yet in it, and
+    a table that mixed them in would read as though they had lost their money.
     """
-    table = standings(books, everyone, start)
+    table = standings(books, everyone, start, entered)
     return sorted(
         table.values(),
-        key=lambda s: (s.equity, s.settled_pnl, s.user_id),
+        key=lambda s: (s.entered, s.equity, s.settled_pnl, s.user_id),
         reverse=True,
     )

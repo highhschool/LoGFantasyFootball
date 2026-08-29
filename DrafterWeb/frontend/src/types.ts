@@ -293,6 +293,10 @@ export interface ContractMarket {
 
 export interface Standing {
   rank: number;
+  /** What they started with. Zero until their ante is paid. */
+  start: number;
+  /** Whether they have paid into the season pot. */
+  entered: boolean;
   user_id: string;
   manager: string;
   /** Spendable. */

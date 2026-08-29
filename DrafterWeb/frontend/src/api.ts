@@ -191,14 +191,21 @@ export const contracts = {
       you: KeeperManager | null;
       cap: number;
       start: number;
+      ante: number;
+      /** False until the commissioner marks your ante paid. */
+      entered: boolean;
       balance: number | null;
       slates: ContractSlate[];
     }>("/api/contracts"),
 
   leaderboard: () =>
-    request<{ start: number; you: string | null; standings: Standing[] }>(
-      "/api/contracts/leaderboard",
-    ),
+    request<{
+      start: number;
+      ante: number;
+      waiting: string[];
+      you: string | null;
+      standings: Standing[];
+    }>("/api/contracts/leaderboard"),
 
   slate: (id: string) =>
     request<{

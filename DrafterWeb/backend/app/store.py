@@ -783,8 +783,24 @@ class SessionStore:
                 (photo, user_id),
             )
 
+    def entered(self, user_id: str, conn=None) -> bool:
+        """Whether this manager has paid into the season pot."""
+        own = conn or self._connect()
+        try:
+            return own.execute(
+                "SELECT 1 FROM contract_antes WHERE user_id = ?", (user_id,)
+            ).fetchone() is not None
+        finally:
+            if conn is None:
+                own.close()
+
     def balance(self, user_id: str, start: int, conn=None) -> int:
         """A manager's spendable play money, as two aggregates.
+
+        **Nothing until the ante is paid.** The bankroll is the stake, so a
+        manager who has not paid in starts at zero rather than at the full
+        amount -- otherwise the pot is real money played for by people who
+        have not put any in.
 
         `core.wallet` is the authority on standings and does this by replaying
         every market. This is the same figure reached in SQL, because the
@@ -807,6 +823,12 @@ class SessionStore:
         )
         own = conn or self._connect()
         try:
+            # Read on the same connection as the trade that is checking it.
+            if own.execute(
+                "SELECT 1 FROM contract_antes WHERE user_id = ?", (user_id,)
+            ).fetchone() is None:
+                start = 0
+
             paid = own.execute(
                 "SELECT COALESCE(SUM(t.cash), 0)" + where, (user_id,)
             ).fetchone()[0]

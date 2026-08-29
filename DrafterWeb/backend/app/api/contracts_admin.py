@@ -394,6 +394,7 @@ def pot(
         books(store, "play"),
         everyone=[m["user_id"] for m in managers],
         start=app_config.CONTRACTS_START,
+        entered=set(paid),
     )
     # You have to be in it to win it. Ranked among the managers who actually
     # paid, so somebody who never anted cannot take a share of other people's

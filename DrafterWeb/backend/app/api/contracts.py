@@ -134,6 +134,10 @@ def spendable(store: SessionStore, user_id: str) -> int:
     return store.balance(user_id, app_config.CONTRACTS_START)
 
 
+def paid_in(store: SessionStore) -> set[str]:
+    return set(store.antes())
+
+
 def market_view(store: SessionStore, row: dict, user_id: str | None,
                 now: datetime | None = None) -> dict:
     row = with_slate(store, row)
@@ -188,10 +192,15 @@ def overview(
             "settled": sum(1 for r in rows if r["resolved"] is not None),
         })
 
+    entered = manager is not None and store.entered(manager["user_id"])
     return {
         "you": manager,
         "cap": app_config.CONTRACTS_CAP,
         "start": app_config.CONTRACTS_START,
+        "ante": app_config.CONTRACTS_ANTE,
+        # The bankroll arrives with the ante, so the screen can say why it is
+        # empty rather than leaving somebody staring at nothing.
+        "entered": entered,
         "balance": spendable(store, manager["user_id"]) if manager else None,
         "slates": out,
     }
@@ -340,6 +349,7 @@ def my_book(
         "unrealised": unrealised,
         "balance": spendable(store, who),
         "start": app_config.CONTRACTS_START,
+        "entered": store.entered(who),
         "as_of": now.isoformat(),
     }
 
@@ -361,15 +371,22 @@ def standings(
     managers = store.managers()
     names = {m["user_id"]: m["display_name"] or m["team_name"] for m in managers}
 
+    entered = paid_in(store)
     table = rank_managers(
         books(store, "play"),
         everyone=[m["user_id"] for m in managers],
         start=app_config.CONTRACTS_START,
+        entered=entered,
     )
 
     me = store.claimed_manager(owner)
     return {
         "start": app_config.CONTRACTS_START,
+        "ante": app_config.CONTRACTS_ANTE,
+        "waiting": [
+            names.get(m["user_id"], m["user_id"])
+            for m in managers if m["user_id"] not in entered
+        ],
         "you": me["user_id"] if me else None,
         "standings": [
             {"rank": i, "manager": names.get(s.user_id, s.user_id), **s.as_dict()}
