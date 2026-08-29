@@ -321,6 +321,7 @@ def available_players(
             {
                 "key": p.key, "name": p.name, "position": p.position, "team": p.team,
                 "bye_week": p.bye_week, "adp": p.adp, "pos_rank": p.pos_rank,
+                "ffc_id": p.ffc_id,
                 "stdev": p.stdev,
             }
             for p in players[:limit]

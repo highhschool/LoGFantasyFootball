@@ -38,14 +38,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    let detail = response.statusText;
+    // Never empty. `statusText` is always "" over HTTP/2 -- which this site is,
+    // behind the tunnel -- and an ApiError carrying an empty string renders as
+    // nothing, leaving a screen on "Loading…" forever instead of saying what
+    // went wrong.
+    let detail = "";
     try {
       const body = await response.json();
-      if (typeof body?.detail === "string") detail = body.detail;
+      if (typeof body?.detail === "string") {
+        detail = body.detail;
+      } else if (Array.isArray(body?.detail)) {
+        // FastAPI answers a bad parameter with a list of them.
+        detail = body.detail
+          .map((d: { msg?: string }) => d?.msg)
+          .filter(Boolean)
+          .join("; ");
+      }
     } catch {
-      // Non-JSON error body; the status text will have to do.
+      // Not JSON. The status will have to do.
     }
-    throw new ApiError(detail, response.status);
+    throw new ApiError(detail || response.statusText || `Request failed (${response.status})`,
+                       response.status);
   }
 
   return response.json() as Promise<T>;

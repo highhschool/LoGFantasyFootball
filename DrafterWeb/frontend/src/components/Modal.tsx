@@ -51,7 +51,14 @@ export function Modal({
         // Only a press that both starts and ends on the backdrop closes it,
         // so a drag that finishes outside the panel does not dismiss the form.
         if (e.target === e.currentTarget) onClose();
+        e.stopPropagation();
       }}
+      // A portal escapes the DOM but not the React tree: events raised in here
+      // still bubble to whatever rendered the dialog. Where that is a clickable
+      // row, pressing the close button re-opened the very thing it shut. Stop
+      // at the boundary, so a dialog is safe to render anywhere.
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
     >
       <div
         ref={panel}

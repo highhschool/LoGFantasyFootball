@@ -74,17 +74,19 @@ export function PlayerTable({
           {players.map((player) => (
             <li
               key={player.key}
-              role="button"
-              tabIndex={0}
-              onClick={() => setProfile(player.ffc_id)}
+              role={player.ffc_id ? "button" : undefined}
+              tabIndex={player.ffc_id ? 0 : undefined}
+              onClick={player.ffc_id ? () => setProfile(player.ffc_id) : undefined}
               onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
+                if (player.ffc_id && (e.key === "Enter" || e.key === " ")) {
                   e.preventDefault();
                   setProfile(player.ffc_id);
                 }
               }}
-              title="Career, ADP and the latest on him"
-              className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-raised focus-visible:bg-raised focus-visible:outline-none"
+              title={player.ffc_id ? "Career, ADP and the latest on him" : undefined}
+              className={`flex items-center gap-3 px-3 py-2 hover:bg-raised focus-visible:bg-raised focus-visible:outline-none ${
+                player.ffc_id ? "cursor-pointer" : ""
+              }`}
             >
               <PositionBadge position={player.position} />
 
