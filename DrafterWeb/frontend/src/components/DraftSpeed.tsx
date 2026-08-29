@@ -65,27 +65,22 @@ export function SpeedPicker({
 }) {
   return (
     <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
-      <span className="text-xs text-ink-3">Bots</span>
+      {/* Ahead of the label, not after the speeds, because the whole group is
+          pushed right by an `ml-auto` and there is slack on this side. Appearing
+          here grows the group leftwards into empty space; appearing at the far
+          end shoved the bar along and re-wrapped it, moving the controls at the
+          one moment you were reaching for them. */}
+      {running && (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="mr-1 rounded-md bg-raised px-2 py-1 text-xs font-semibold text-ink-2 hover:text-ink"
+        >
+          Skip to my pick
+        </button>
+      )}
 
-      {/* Always laid out, only sometimes visible. It used to be appended when
-          the bots started picking, which shoved the speeds along and re-wrapped
-          the bar underneath -- the controls moved at exactly the moment you
-          were reaching for them. Hidden rather than unmounted, so the row is
-          the same width whether it is running or not. `invisible` also takes
-          it out of the tab order, which `opacity-0` would not. */}
-      <button
-        type="button"
-        onClick={onSkip}
-        disabled={!running}
-        aria-hidden={!running}
-        title="Skip to my pick"
-        aria-label="Skip to my pick"
-        className={`rounded-md bg-raised px-2 py-1 text-xs font-semibold text-ink-2 hover:text-ink ${
-          running ? "" : "invisible"
-        }`}
-      >
-        Skip
-      </button>
+      <span className="text-xs text-ink-3">Bots</span>
 
       {(Object.keys(SPEEDS) as Speed[]).map((key) => {
         const { label, name } = SPEEDS[key];
@@ -100,8 +95,14 @@ export function SpeedPicker({
             // the name and gets padded back out to the width of one.
             aria-label={glyph ? name : undefined}
             title={glyph ? name : undefined}
-            className={`rounded-md py-1 text-xs font-medium ${
-              glyph ? "w-8 leading-none" : "px-2"
+            // A chevron at label size is a faint mark rather than an arrow, so
+            // it is set larger than the words beside it -- but in a box of the
+            // same height, centred, so the row still reads as one strip of
+            // buttons and nothing grows.
+            className={`rounded-md font-medium ${
+              glyph
+                ? "inline-flex h-6 w-8 items-center justify-center text-base leading-none"
+                : "px-2 py-1 text-xs"
             } ${
               key === speed ? "bg-accent text-ground" : "bg-raised text-ink-2 hover:text-ink"
             }`}
