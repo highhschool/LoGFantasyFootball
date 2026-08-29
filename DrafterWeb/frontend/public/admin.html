@@ -647,9 +647,32 @@
         <input type="search" id="slate-name" placeholder="Slate name" value="Draft night">
         <input type="search" id="slate-start" placeholder="2026-09-01T18:30:00-05:00"
                value="2026-09-01T18:30:00-05:00">
+        <select id="slate-stakes" aria-label="Which money">
+          <option value="play">Play money</option>
+          <option value="real">Real money</option>
+        </select>
         <button id="save-slate">Open it</button>
       </div>
-      <p class="note">Opens on the Tuesday 9am before that time, and closes when the draft starts.</p>`;
+      <p class="note">Opens on the Tuesday 9am before that time, and closes when the draft starts.</p>
+      <p class="note" id="stakes-note"></p>`;
+
+    // Which money a slate uses is fixed for its life -- a market that changed
+    // halfway would owe two different settlements on the same trades -- so it
+    // says what the choice means before the slate exists rather than after.
+    const stakes = document.getElementById("slate-stakes");
+    const note = document.getElementById("stakes-note");
+    const describe = () => {
+      const real = stakes.value === "real";
+      note.className = real ? "note err" : "note";
+      note.innerHTML = real
+        ? "<strong>Real money.</strong> No wallet, no bankroll limit, and it stays "
+          + "off the season leaderboard. Settles as a list of who owes whom, with "
+          + "you as the counterparty on every market. This cannot be changed later."
+        : "Play money. Spends from each manager's balance and counts towards the "
+          + "season leaderboard. This cannot be changed later.";
+    };
+    stakes.addEventListener("change", describe);
+    describe();
 
     document.getElementById("save-slate").addEventListener("click", async (e) => {
       e.target.disabled = true;
@@ -659,6 +682,7 @@
         body: JSON.stringify({
           name: document.getElementById("slate-name").value,
           kind: "draft",
+          stakes: document.getElementById("slate-stakes").value,
           draft_start: document.getElementById("slate-start").value,
         }),
       });
