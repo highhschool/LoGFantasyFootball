@@ -185,7 +185,10 @@ function Seasons({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-xs">
+      {/* The cells sit at px-2 so seven columns fit without scrolling, but the
+          outermost ones have to line up with the px-3 the rest of the panel is
+          set in -- otherwise the table reads as 4px adrift of its own box. */}
+      <table className="w-full text-xs [&_td:first-child]:pl-3 [&_td:last-child]:pr-3 [&_th:first-child]:pl-3 [&_th:last-child]:pr-3">
         <thead>
           <tr className="border-b border-rule text-ink-3">
             <th className="px-2 py-1 text-left font-medium"> </th>
